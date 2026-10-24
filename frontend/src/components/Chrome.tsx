@@ -17,12 +17,12 @@ export function Mark({ size = 28 }: { size?: number }) {
 export function SiteHeader({ tone = 'cream' }: { tone?: 'cream' | 'paper' }) {
   return (
     <header className={`border-b-2 border-ink ${tone === 'paper' ? 'bg-paper' : 'bg-cream'}`}>
-      <div className="mx-auto flex h-16 max-w-[1320px] items-center justify-between gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex h-16 max-w-[1320px] items-center justify-between gap-2 px-4 sm:gap-4 sm:px-6">
         <Link to="/" className="flex shrink-0 items-center gap-2.5 rounded-md" aria-label="TACTIX home">
           <Mark />
           <span className="score text-[1.35rem] tracking-tight">TACTIX</span>
         </Link>
-        <nav className="flex items-center gap-2 sm:gap-4" aria-label="Main">
+        <nav className="flex items-center gap-1 min-[380px]:gap-2 sm:gap-4" aria-label="Main">
           <NavLink
             to="/analyst"
             className={({ isActive }) =>
@@ -33,7 +33,7 @@ export function SiteHeader({ tone = 'cream' }: { tone?: 'cream' | 'paper' }) {
             <span className="hidden min-[380px]:inline">Analyst Mode</span>
             <span className="min-[380px]:hidden">Analyst</span>
           </NavLink>
-          <Link to="/#make-the-call" className="btn btn-primary lift min-h-11 px-4 text-base">
+          <Link to="/#make-the-call" className="btn btn-primary lift min-h-11 px-3 text-base min-[380px]:px-4">
             Play
           </Link>
         </nav>
