@@ -1,0 +1,35 @@
+// Bake the home page into dist/index.html so it renders without JavaScript
+// and paints before the bundle loads. Other routes use dist/spa.html, an empty
+// shell, so a deep link never flashes the home page (see vercel.json).
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const dist = path.join(root, 'dist')
+const ssrEntry = path.join(root, 'dist-ssr', 'entry-server.js')
+
+const { render } = await import(pathToFileURL(ssrEntry).href)
+const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8')
+const marker = '<div id="root"></div>'
+if (!shell.includes(marker)) throw new Error('index.html has no empty #root to fill')
+
+// Preload the headline's Latin font so the LCP text paints in its real face
+// early instead of being discovered after the stylesheet. The score face is
+// smaller on screen and left to load normally so it doesn't compete.
+const fonts = fs
+  .readdirSync(path.join(dist, 'assets'))
+  .filter((f) => /^schibsted-grotesk-latin-wght-normal-.*\.woff2$/.test(f))
+const preload = fonts.map((f) => `<link rel="preload" href="/assets/${f}" as="font" type="font/woff2" crossorigin />`).join('')
+const head = shell.replace('</head>', `${preload}</head>`)
+
+fs.writeFileSync(path.join(dist, 'spa.html'), head)
+// The prerendered page is complete without JS, so the bundle can yield
+// bandwidth to the font and paint; it only delays hydration.
+const page = head
+  .replace(marker, `<div id="root">${render('/')}</div>`)
+  .replace('<script type="module" crossorigin', '<script type="module" fetchpriority="low" crossorigin')
+fs.writeFileSync(path.join(dist, 'index.html'), page)
+console.log(`Preloaded ${fonts.length} font files`)
+fs.rmSync(path.join(root, 'dist-ssr'), { recursive: true, force: true })
+console.log('Prerendered / into dist/index.html; SPA shell at dist/spa.html')

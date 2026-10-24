@@ -1,0 +1,309 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/schibsted-grotesk/wght.css';
+@import '@fontsource-variable/anybody/wdth.css';
+
+/*
+ * Latin face of the headline font with font-display: optional. The file is
+ * preloaded, so it is normally ready for the first paint; when it is not, the
+ * headline stays in the fallback for that visit instead of repainting late,
+ * which keeps LCP at first paint. Declared after the import so it wins.
+ */
+@font-face {
+  font-family: 'Schibsted Grotesk Variable';
+  font-style: normal;
+  font-display: optional;
+  font-weight: 400 900;
+  src: url('@fontsource-variable/schibsted-grotesk/files/schibsted-grotesk-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
+    U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@theme {
+  /* Ground and ink come from the TACTIX mark. */
+  --color-cream: #fbf0d9;
+  --color-cream-deep: #f3e3bf;
+  --color-paper: #fffaf0;
+  --color-ink: #14161f;
+  --color-ink-soft: #464957;
+  --color-vermilion: #ff5a36;
+  --color-vermilion-deep: #c93a1a;
+  --color-yellow: #ffd23f;
+  --color-sky: #7cc8ff;
+  --color-sky-deep: #2f7fc0;
+  /* Soft, sun-washed pitch rather than a saturated broadcast green. */
+  --color-pitch: #8cc57e;
+  --color-pitch-stripe: #80bb72;
+  --color-pitch-deep: #3f7a3a;
+  --color-chalk: #f8fff2;
+
+  --font-sans: 'Schibsted Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-score: 'Anybody Variable', 'Schibsted Grotesk Variable', ui-sans-serif, sans-serif;
+
+  --radius-panel: 14px;
+  --radius-control: 10px;
+
+  --shadow-lift: 4px 4px 0 0 var(--color-ink);
+  --shadow-lift-lg: 6px 6px 0 0 var(--color-ink);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-glide: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Type scale for Persuade surfaces (see DESIGN.md) */
+  --text-hero: clamp(2.6rem, 1.4rem + 3.6vw, 4.6rem);
+  --text-hero--line-height: 0.98;
+  --text-lede: clamp(1.15rem, 1rem + 0.5vw, 1.45rem);
+  --text-lede--line-height: 1.35;
+  --text-body: 1.125rem;
+  --text-body--line-height: 1.55;
+}
+
+@layer base {
+  html {
+    background: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    scrollbar-color: var(--color-ink) var(--color-cream-deep);
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--color-cream);
+  }
+
+  ::selection {
+    background: var(--color-yellow);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-sky-deep);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    letter-spacing: -0.025em;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  a {
+    text-underline-offset: 0.2em;
+    text-decoration-thickness: 2px;
+  }
+
+  input,
+  textarea {
+    caret-color: var(--color-vermilion);
+  }
+
+  ::placeholder {
+    color: var(--color-ink-soft);
+    opacity: 1;
+  }
+}
+
+@layer components {
+  /* Scoreboard numerals: wide, heavy, tabular. */
+  .score {
+    font-family: var(--font-score);
+    font-stretch: 140%;
+    font-weight: 850;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    line-height: 0.88;
+  }
+
+  .score-narrow {
+    font-family: var(--font-score);
+    font-stretch: 75%;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Gumroad-style interactive lift: flat at rest, lifted with an ink shadow. */
+  .lift {
+    transition:
+      transform 160ms var(--ease-out-expo),
+      box-shadow 160ms var(--ease-out-expo);
+  }
+  .lift:hover:not(:disabled),
+  .lift:focus-visible {
+    transform: translate(-3px, -3px);
+    box-shadow: var(--shadow-lift);
+  }
+  .lift:active:not(:disabled) {
+    transform: translate(0, 0);
+    box-shadow: none;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 3rem;
+    padding: 0 1.35rem;
+    border: 2px solid var(--color-ink);
+    border-radius: var(--radius-control);
+    font-weight: 700;
+    font-size: 1.0625rem;
+    color: var(--color-ink);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  .btn-primary {
+    background: var(--color-yellow);
+  }
+  .btn-plain {
+    background: var(--color-paper);
+  }
+  .btn-ink {
+    background: var(--color-ink);
+    color: var(--color-cream);
+  }
+
+  .panel {
+    background: var(--color-paper);
+    border: 2px solid var(--color-ink);
+    border-radius: var(--radius-panel);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Pitch tokens are SVG groups: give them a visible keyboard focus. */
+.tx-token:focus-visible .tx-token-face {
+  stroke: var(--color-sky-deep);
+  stroke-width: 1.1;
+}
+
+/* ---------- Home motion (transform and opacity only; see DESIGN.md) ---------- */
+@keyframes tx-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+/* The headline only slides, so it is visible (and counts as painted) from the first frame. */
+@keyframes tx-slide {
+  from {
+    transform: translateY(14px);
+  }
+}
+@keyframes tx-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes tx-pulse {
+  0% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.65);
+  }
+}
+@keyframes tx-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes tx-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+}
+@keyframes tx-flash {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+
+.tx-rise {
+  animation: tx-rise 560ms var(--ease-glide) both;
+}
+.tx-slide {
+  animation: tx-slide 560ms var(--ease-glide) both;
+}
+.tx-fade-in {
+  animation: tx-fade 300ms var(--ease-glide) both;
+}
+.tx-pop {
+  animation: tx-pop 320ms var(--ease-glide) both;
+}
+.tx-flash {
+  animation: tx-flash 600ms var(--ease-glide) both;
+}
+.tx-glide {
+  transition: transform 500ms var(--ease-glide);
+}
+.tx-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tx-pulse 2.6s var(--ease-glide) 600ms infinite;
+}
+.tx-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: tx-draw 600ms var(--ease-glide) 700ms forwards;
+}
+.tx-draw-head {
+  opacity: 0;
+  animation: tx-fade 180ms linear 1250ms forwards;
+}
+
+/* Tactic glyphs act out their plan on hover, focus or selection. */
+.tx-glyph-move {
+  transition: transform 450ms var(--ease-glide);
+}
+.tx-card:hover .tx-glyph-move,
+.tx-card:focus-visible .tx-glyph-move,
+.tx-card[aria-pressed='true'] .tx-glyph-move {
+  transform: translate(var(--gx, 0), var(--gy, 0));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-iteration-count: 1 !important;
+  }
+  .tx-pulse {
+    animation: none;
+    opacity: 0;
+  }
+  .tx-glide,
+  .tx-glyph-move {
+    transition: none;
+  }
+}
