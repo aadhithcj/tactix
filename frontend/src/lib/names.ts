@@ -4,6 +4,10 @@ const PARTICLES = new Set(['le', 'la', 'de', 'del', 'della', 'di', 'da', 'dos', 
 // Players known by more than their last word.
 const KNOWN_AS: Record<string, string> = {
   'Kolo Muani': 'Kolo Muani',
+  // Family name first.
+  'Son Heung-Min': 'Son',
+  'Son Heung-min': 'Son',
+  'Kim Min-Jae': 'Kim',
 }
 
 /** The short name a commentator would use: the surname, keeping its particles. */

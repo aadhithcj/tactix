@@ -19,7 +19,7 @@ from app.services.simulation import (
 
 FIXTURE = (
     Path(__file__).resolve().parents[2]
-    / "frontend/src/data/fixtures/scenario-lusail-2022-70.json"
+    / "frontend/src/data/fixtures/scenario-lusail-2022-71.json"
 )
 ARG, MESSI, MONTIEL = 779, 5503, 28263
 
@@ -82,14 +82,14 @@ def test_template_take_without_gemini(snapshot: dict) -> None:
 @pytest.fixture
 def scenario_client(snapshot: dict):
     scenario = MagicMock()
-    scenario.slug = "lusail-2022-70"
+    scenario.slug = "lusail-2022-71"
     scenario.title = "Twenty minutes from glory"
     scenario.tagline = "Tagline"
     scenario.minute = 70
     scenario.match_id = 3869685
     scenario.snapshot = copy.deepcopy(snapshot)
     db = MagicMock()
-    db.get.side_effect = lambda model, key: scenario if key == "lusail-2022-70" else None
+    db.get.side_effect = lambda model, key: scenario if key == "lusail-2022-71" else None
     app.dependency_overrides[get_db] = lambda: db
     try:
         yield TestClient(app)
@@ -98,7 +98,7 @@ def scenario_client(snapshot: dict):
 
 
 def test_scenario_detail_has_suggested_shapes(scenario_client: TestClient) -> None:
-    res = scenario_client.get("/api/scenarios/lusail-2022-70")
+    res = scenario_client.get("/api/scenarios/lusail-2022-71")
     assert res.status_code == 200
     shapes = res.json()["suggested_shapes"][str(ARG)]
     assert set(shapes) == {"park_bus", "high_press", "mark_threat"}
@@ -107,7 +107,7 @@ def test_scenario_detail_has_suggested_shapes(scenario_client: TestClient) -> No
 
 def test_simulate_endpoint(scenario_client: TestClient) -> None:
     res = scenario_client.post(
-        "/api/scenarios/lusail-2022-70/simulate",
+        "/api/scenarios/lusail-2022-71/simulate",
         json={
             "team_id": ARG,
             "tactic": "park_bus",
@@ -124,7 +124,7 @@ def test_simulate_endpoint(scenario_client: TestClient) -> None:
 
 def test_simulate_rejects_unavailable_sub(scenario_client: TestClient) -> None:
     res = scenario_client.post(
-        "/api/scenarios/lusail-2022-70/simulate",
+        "/api/scenarios/lusail-2022-71/simulate",
         json={"team_id": ARG, "tactic": "park_bus", "substitutions": [{"off_id": MESSI, "on_id": 1}]},
     )
     assert res.status_code == 422

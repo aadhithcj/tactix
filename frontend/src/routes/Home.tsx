@@ -6,7 +6,7 @@ import { competitionName, ScoreBug, SiteFooter, SiteHeader, teamCode } from '../
 import { MiniPitch } from '../components/MiniPitch'
 import { ShotMap } from '../components/ShotMap'
 import { TACTICS, TacticGlyph } from '../components/TacticGlyph'
-import lusail from '../data/fixtures/scenario-lusail-2022-70.json'
+import lusail from '../data/fixtures/scenario-lusail-2022-71.json'
 import { api } from '../lib/api'
 import { kitVars } from '../lib/kits'
 import { shortName } from '../lib/names'
@@ -102,6 +102,7 @@ export default function Home() {
                     away="FRA"
                     score={snap.score}
                     minute={snap.minute}
+                    second={snap.second ?? 0}
                     running={locking}
                     status={locking ? 'LIVE' : 'PAUSED'}
                     size="md"
@@ -334,6 +335,15 @@ function MoreMoments() {
             ))}
           </ol>
         )}
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-[14px] border-2 border-dashed border-ink px-5 py-5 sm:px-7">
+          <p className="max-w-[52ch] text-body">
+            <span className="font-[850]">Got a match in mind?</span> Pick any game in StatsBomb's free data, freeze it at
+            any minute and take charge.
+          </p>
+          <Link to="/moments/new" className="btn btn-ink lift min-h-12">
+            Pick any match
+          </Link>
+        </div>
       </div>
     </section>
   )

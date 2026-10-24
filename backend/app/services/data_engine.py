@@ -66,6 +66,7 @@ class StatsBombProcessor:
                         "away_team": str(m["away_team"]),
                         "home_score": int(m["home_score"]),
                         "away_score": int(m["away_score"]),
+                        "stadium": str(m["stadium"]) if "stadium" in m and pd.notna(m["stadium"]) else "",
                     }
             except (KeyError, ValueError, requests.RequestException) as exc:
                 logger.warning("Could not fetch match metadata from sb.matches: %s", exc)

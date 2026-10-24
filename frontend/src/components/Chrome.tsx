@@ -2,7 +2,7 @@ import { WifiOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink } from 'react-router'
 import { subscribeOffline } from '../lib/api'
-import { kitFor } from '../lib/kits'
+import { codeFor, kitPair } from '../lib/kits'
 import { usePrefersReducedMotion } from '../lib/usePrefersReducedMotion'
 
 export function Mark({ size = 28 }: { size?: number }) {
@@ -23,6 +23,14 @@ export function SiteHeader({ tone = 'cream' }: { tone?: 'cream' | 'paper' }) {
           <span className="score text-[1.35rem] tracking-tight">TACTIX</span>
         </Link>
         <nav className="flex items-center gap-1 min-[380px]:gap-2 sm:gap-4" aria-label="Main">
+          <NavLink
+            to="/moments/new"
+            className={({ isActive }) =>
+              `hidden whitespace-nowrap rounded-md px-2 py-2 font-semibold underline-offset-4 hover:underline md:inline-block ${isActive ? 'underline' : ''}`
+            }
+          >
+            Any match
+          </NavLink>
           <NavLink
             to="/analyst"
             className={({ isActive }) =>
@@ -125,6 +133,7 @@ export function ScoreBug({
   away = 'FRA',
   score = { home: 2, away: 0 },
   minute = 70,
+  second = 0,
   running = false,
   status,
   size = 'lg',
@@ -133,20 +142,21 @@ export function ScoreBug({
   away?: string
   score?: { home: number; away: number }
   minute?: number
+  second?: number
   running?: boolean
   status?: string
   size?: 'lg' | 'md'
 }) {
   const reduce = usePrefersReducedMotion()
-  const homeKit = kitFor(home, 'home')
-  const awayKit = kitFor(away, 'away')
+  const [homeKit, awayKit] = kitPair(home, away)
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
     if (reduce || !running) return
     const id = window.setInterval(() => setSeconds((s) => (s + 1) % (20 * 60)), 1000)
     return () => window.clearInterval(id)
   }, [reduce, running])
-  const clock = `${minute + Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+  const elapsed = second + seconds
+  const clock = `${minute + Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
 
   return (
     <div
@@ -176,15 +186,7 @@ export function ScoreBug({
 }
 
 export function teamCode(name: string) {
-  const codes: Record<string, string> = {
-    Argentina: 'ARG',
-    France: 'FRA',
-    Croatia: 'CRO',
-    Italy: 'ITA',
-    England: 'ENG',
-    Spain: 'ESP',
-  }
-  return codes[name] ?? name.slice(0, 3).toUpperCase()
+  return codeFor(name)
 }
 
 export function competitionName(raw: string) {

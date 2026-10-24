@@ -74,6 +74,7 @@ export interface Snapshot {
     away: string
   }
   minute: number
+  second?: number
   horizon_minutes: number
   full_time_minute: number
   score: { home: number; away: number }
@@ -230,6 +231,26 @@ export interface MatchDetail extends MatchSummary {
     momentum_timeline?: MomentumBucket[]
   }
   scenario_slugs: string[]
+}
+
+export interface CatalogCompetition {
+  competition_id: number
+  season_id: number
+  competition: string
+  season: string
+  country: string
+  gender: string
+}
+
+export interface CatalogMatch {
+  match_id: number
+  date: string
+  home: string
+  away: string
+  home_score: number
+  away_score: number
+  stage: string
+  stadium: string
 }
 
 export interface MatchEvent {

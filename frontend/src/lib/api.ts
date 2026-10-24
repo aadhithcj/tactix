@@ -1,5 +1,7 @@
 import { simulateLocally } from './model'
 import type {
+  CatalogCompetition,
+  CatalogMatch,
   MatchDetail,
   MatchEvent,
   MatchSummary,
@@ -101,6 +103,15 @@ export const api = {
     request<MatchEvent[]>(`/api/matches/${id}/events?event_type=Shot&limit=200`, undefined, () =>
       fixture(`shots-${id}`),
     ),
+
+  competitions: () => request<CatalogCompetition[]>('/api/catalog/competitions'),
+
+  catalogMatches: (competitionId: number, seasonId: number) =>
+    request<CatalogMatch[]>(`/api/catalog/matches?competition_id=${competitionId}&season_id=${seasonId}`),
+
+  /** Build (or reuse) a playable moment from any open-data match. */
+  createMoment: (body: { competition_id: number; season_id: number; match_id: number; minute: number }) =>
+    request<{ slug: string }>('/api/catalog/moments', { method: 'POST', body: JSON.stringify(body) }),
 
   ask: (id: number, question: string) =>
     request<{ answer: string; source: 'gemini' | 'model' }>(

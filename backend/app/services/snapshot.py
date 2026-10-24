@@ -35,6 +35,26 @@ TEAM_CODES = {
     "Portugal": "POR",
     "Netherlands": "NED",
     "Belgium": "BEL",
+    "United States": "USA",
+    "Morocco": "MAR",
+    "Japan": "JPN",
+    "Real Madrid": "RMA",
+    "Barcelona": "BAR",
+    "Atlético Madrid": "ATM",
+    "Manchester United": "MUN",
+    "Manchester City": "MCI",
+    "Liverpool": "LIV",
+    "Chelsea": "CHE",
+    "Arsenal": "ARS",
+    "Tottenham Hotspur": "TOT",
+    "Bayern Munich": "BAY",
+    "Borussia Dortmund": "BVB",
+    "Bayer Leverkusen": "B04",
+    "Juventus": "JUV",
+    "AC Milan": "MIL",
+    "Inter Milan": "INT",
+    "Paris Saint-Germain": "PSG",
+    "Ajax": "AJA",
 }
 
 # StatsBomb nicknames that differ from how the player is commonly known.
@@ -100,6 +120,25 @@ def _mirror(x: float, y: float) -> tuple[float, float]:
     return PITCH_X - x, PITCH_Y - y
 
 
+def auto_dilemma(goals_for: int, goals_against: int, opponent: str, horizon: int) -> str:
+    """Plain framing for moments without hand-written copy."""
+    mins = f"{horizon} minutes"
+    if goals_for > goals_against:
+        return (
+            f"You lead {goals_for}–{goals_against} with about {mins} to play. "
+            f"Shut {opponent} out, or go for the goal that ends it?"
+        )
+    if goals_for < goals_against:
+        return (
+            f"You're {goals_for}–{goals_against} down with about {mins} left. "
+            f"Something has to change before {opponent} see it out."
+        )
+    return (
+        f"It's {goals_for}–{goals_against} with about {mins} left. "
+        f"Push for a winner against {opponent}, or make sure you don't lose it?"
+    )
+
+
 class SnapshotBuilder:
     def __init__(
         self,
@@ -113,7 +152,7 @@ class SnapshotBuilder:
         self.lineups = lineups
         self.meta = metadata
         self.spec = spec
-        self.cutoff = spec.minute * 60.0
+        self.cutoff = spec.minute * 60.0 + spec.second
         self.before = self.events[
             (self.events["_clock"] < self.cutoff) & (self.events["period"] <= 4)
         ]
@@ -372,7 +411,13 @@ class SnapshotBuilder:
                 "code": team_code(team),
                 "is_home": team == home,
                 "formation": formation,
-                "dilemma": self.spec.dilemmas.get(team, ""),
+                "dilemma": self.spec.dilemmas.get(team)
+                or auto_dilemma(
+                    score["home"] if team == home else score["away"],
+                    score["away"] if team == home else score["home"],
+                    opponent,
+                    horizon,
+                ),
                 "players": players,
                 "bench": bench,
                 "subs_used": subs_used,
@@ -401,13 +446,14 @@ class SnapshotBuilder:
                 "competition": self.meta["competition"],
                 "season": self.meta["season"],
                 "date": self.meta["match_date"],
-                "venue": self.spec.venue,
+                "venue": self.spec.venue or str(self.meta.get("stadium") or ""),
                 "home_team_id": int(self.meta["home_team_id"]),
                 "away_team_id": int(self.meta["away_team_id"]),
                 "home": home,
                 "away": away,
             },
             "minute": self.spec.minute,
+            "second": self.spec.second,
             "horizon_minutes": horizon,
             "full_time_minute": full_time,
             "score": score,

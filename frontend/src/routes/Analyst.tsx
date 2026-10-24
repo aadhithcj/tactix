@@ -6,7 +6,7 @@ import { competitionName, Scoreline, SiteFooter, SiteHeader, teamCode } from '..
 import { PassNetworkView } from '../components/PassNetwork'
 import { ShotMap } from '../components/ShotMap'
 import { api } from '../lib/api'
-import { kitFor, kitVars } from '../lib/kits'
+import { kitPair, kitVars } from '../lib/kits'
 import type { MatchDetail, MomentumBucket, PassNetwork, TeamStats } from '../lib/types'
 
 type Tab = 'shots' | 'network' | 'momentum'
@@ -211,6 +211,7 @@ function NetworkTab({ match }: { match: MatchDetail }) {
     return <p className="p-6">No passing network for this match yet. Re-run the seeder to compute one.</p>
   }
   const isHome = teamId === String(match.home_team_id)
+  const pair = kitPair(match.home_team?.name ?? '', match.away_team?.name ?? '')
 
   return (
     <div>
@@ -224,7 +225,7 @@ function NetworkTab({ match }: { match: MatchDetail }) {
                 aria-pressed={teamId === String(t.id)}
                 onClick={() => setTeamId(String(t.id))}
                 className={`rounded-full border-2 border-ink px-3 py-1 text-sm font-semibold ${teamId === String(t.id) ? '' : 'bg-paper hover:bg-cream-deep'}`}
-                style={teamId === String(t.id) ? { background: kitFor(t.name, i ? 'away' : 'home').fill, color: kitFor(t.name, i ? 'away' : 'home').ink } : undefined}
+                style={teamId === String(t.id) ? { background: pair[i].fill, color: pair[i].ink } : undefined}
               >
                 {t.name}
               </button>
@@ -234,7 +235,7 @@ function NetworkTab({ match }: { match: MatchDetail }) {
         <p className="text-sm text-ink-soft">Attacking right. Point at a player or a pair to trace their links.</p>
       </div>
       <div className="border-t-2 border-ink">
-        <PassNetworkView key={teamId} net={net} kit={kitFor(net.team_name, isHome ? 'home' : 'away')} />
+        <PassNetworkView key={teamId} net={net} kit={pair[isHome ? 0 : 1]} />
       </div>
     </div>
   )

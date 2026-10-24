@@ -13,6 +13,7 @@ from app.schemas import (
     SimulationRequest,
     SimulationResponse,
 )
+from app.services.moments import CUSTOM_PREFIX
 from app.services.pundit import pundit_take, read_plan
 from app.services.simulation import PRESETS, evaluate, suggest_shape
 
@@ -67,8 +68,12 @@ def _summary(s: models.Scenario) -> ScenarioSummary:
 
 
 @router.get("", response_model=list[ScenarioSummary])
-def list_scenarios(db: DbSession) -> list[ScenarioSummary]:
-    rows = db.execute(select(models.Scenario).order_by(models.Scenario.sort_order)).scalars()
+def list_scenarios(db: DbSession, include_custom: bool = False) -> list[ScenarioSummary]:
+    """Curated moments by default; include_custom adds ones built from any match."""
+    stmt = select(models.Scenario).order_by(models.Scenario.sort_order, models.Scenario.slug)
+    if not include_custom:
+        stmt = stmt.where(models.Scenario.slug.not_like(f"{CUSTOM_PREFIX}%"))
+    rows = db.execute(stmt).scalars()
     return [_summary(s) for s in rows]
 
 

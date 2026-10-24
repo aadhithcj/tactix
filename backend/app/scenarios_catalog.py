@@ -22,19 +22,21 @@ class ScenarioSpec:
     # Per-team framing of the dilemma, keyed by StatsBomb team name.
     dilemmas: dict[str, str] = field(default_factory=dict)
     subs_allowed: int = 5
+    second: int = 0
 
 
 CATALOG: tuple[ScenarioSpec, ...] = (
     ScenarioSpec(
-        slug="lusail-2022-70",
+        slug="lusail-2022-71",
         match_id=3869685,
         competition_id=43,
         season_id=106,
-        minute=70,
+        minute=71,
+        second=27,
         title="Twenty minutes from glory",
         tagline=(
             "Argentina have controlled the World Cup Final. France have barely had a "
-            "shot, and Deschamps is about to throw on Coman and Camavinga."
+            "shot, and Deschamps has just thrown on Coman and Camavinga."
         ),
         venue="Lusail Stadium, Qatar",
         dilemmas={

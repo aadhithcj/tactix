@@ -7,6 +7,7 @@ import Home from './routes/Home'
 // The board and the analyst views load on demand to keep the first page light.
 const Play = lazy(() => import('./routes/Play'))
 const Analyst = lazy(() => import('./routes/Analyst'))
+const AnyMatch = lazy(() => import('./routes/AnyMatch'))
 
 export function makeQueryClient() {
   return new QueryClient({
@@ -51,6 +52,7 @@ export const routes: RouteObject[] = [
     children: [
       { path: '/', element: <Home /> },
       { path: '/play/:slug', element: <Play /> },
+      { path: '/moments/new', element: <AnyMatch /> },
       { path: '/analyst', element: <Analyst /> },
       { path: '/analyst/:matchId', element: <Analyst /> },
       { path: '*', element: <NotFound /> },

@@ -38,7 +38,7 @@ Players wear their team's kit (`frontend/src/lib/kits.ts`): the shirt colour is 
 | Italy | `#1F66C6` | `#FFFFFF` |
 | Spain | `#AD0F26` | `#FFD23F` |
 
-Unknown teams fall back to sky (home) and vermilion (away). Containers set `--kit-you`, `--kit-you-ink`, `--kit-them` and `--kit-them-ink` with `kitVars()`; on the game board "you" is the side you manage, in Analyst Mode it is the home side.
+The full table (national teams and the clubs in StatsBomb's open data) is in `kits.ts`. When two kits would look alike, the second team wears its change kit, as on a real matchday. Unknown teams fall back to sky (home) and vermilion (away). Containers set `--kit-you`, `--kit-you-ink`, `--kit-them` and `--kit-them-ink` with `kitVars()`; on the game board "you" is the side you manage, in Analyst Mode it is the home side.
 
 Rules:
 - **Team colour is never the only cue.** Your tokens are circles and theirs are rounded squares; the key threat carries a ring and a name; goals are filled with a centre dot while misses are open rings; every mark keeps an ink outline so light kits (England's white) read on grass.

@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db, init_db
-from app.routers import matches, scenarios
+from app.routers import catalog, matches, scenarios
 from app.schemas import HealthCheckResponse
+from app.services.seeding import seed_missing_in_background
 
 logger = logging.getLogger("tactix")
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +25,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         init_db()
         logger.info("Database initialized successfully.")
+        if settings.AUTO_SEED:
+            seed_missing_in_background()
     except (SQLAlchemyError, OSError) as exc:
         logger.warning("Database initialization deferred or failed: %s", exc)
     yield
@@ -38,8 +41,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origins=settings.allowed_origins,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -77,3 +80,4 @@ def health_check(
 
 app.include_router(matches.router)
 app.include_router(scenarios.router)
+app.include_router(catalog.router)
