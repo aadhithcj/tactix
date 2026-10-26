@@ -124,15 +124,26 @@ def _describe(spec: ScenarioSpec, snapshot: dict[str, Any]) -> tuple[str, str]:
     return spec.title or title, spec.tagline or tagline
 
 
-def ingest_match(specs: list[ScenarioSpec], sort_orders: dict[str, int] | None = None) -> list[str]:
+def ingest_match(
+    specs: list[ScenarioSpec],
+    sort_orders: dict[str, int] | None = None,
+    *,
+    source: tuple[int, int, int] | None = None,
+) -> list[str]:
     """Fetch one match, store it with its events and players, and build a
-    scenario for each spec (all specs must share the match). Returns slugs."""
-    spec = specs[0]
-    match_id = spec.match_id
+    scenario for each spec (all specs must share the match). Returns slugs.
+    With no specs, pass source=(competition_id, season_id, match_id) to store
+    the match for Analyst Mode only."""
+    if specs:
+        competition_id, season_id, match_id = specs[0].competition_id, specs[0].season_id, specs[0].match_id
+    elif source:
+        competition_id, season_id, match_id = source
+    else:
+        raise ValueError("ingest_match needs specs or a source")
     logger.info("Ingesting match_id=%d...", match_id)
     processor = StatsBombProcessor()
 
-    events_df, metadata = processor.fetch_match_data(match_id, spec.competition_id, spec.season_id)
+    events_df, metadata = processor.fetch_match_data(match_id, competition_id, season_id)
     lineups = sb.lineups(match_id=match_id)
     logger.info(
         "Fetched %d events for %s vs %s",

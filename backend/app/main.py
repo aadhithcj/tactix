@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -13,6 +14,7 @@ from app.config import settings
 from app.database import get_db, init_db
 from app.routers import catalog, matches, scenarios
 from app.schemas import HealthCheckResponse
+from app.services.moments import warm_library_in_background
 from app.services.seeding import seed_missing_in_background
 
 logger = logging.getLogger("tactix")
@@ -27,6 +29,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Database initialized successfully.")
         if settings.AUTO_SEED:
             seed_missing_in_background()
+            warm_library_in_background()
     except (SQLAlchemyError, OSError) as exc:
         logger.warning("Database initialization deferred or failed: %s", exc)
     yield
@@ -39,6 +42,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# The match library is ~1 MB of JSON; compressed it is about a tenth of that.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,

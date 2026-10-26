@@ -28,6 +28,21 @@ class CatalogMatch(BaseModel):
     stadium: str
 
 
+class LibrarySeason(Competition):
+    matches: int
+
+
+class LibraryMatch(CatalogMatch):
+    competition_id: int
+    season_id: int
+
+
+class Library(BaseModel):
+    ready: bool
+    seasons: list[LibrarySeason] = []
+    matches: list[LibraryMatch] = []
+
+
 class MomentRequest(BaseModel):
     competition_id: int
     season_id: int
@@ -39,11 +54,31 @@ class MomentCreated(BaseModel):
     slug: str
 
 
+class AnalyseRequest(BaseModel):
+    competition_id: int
+    season_id: int
+    match_id: int
+
+
+class AnalyseReady(BaseModel):
+    match_id: int
+
+
 def _unavailable(exc: Exception) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail=f"The match data source couldn't be reached. Try again in a moment. ({exc})",
     )
+
+
+@router.get("/library", response_model=Library)
+def library() -> Library:
+    """Every open-data match, for searching and filtering in the browser.
+    Returns ready=false (and starts loading) while the library is being built."""
+    data = moments.get_library()
+    if data is None:
+        return Library(ready=False)
+    return Library(ready=True, seasons=data["seasons"], matches=data["matches"])
 
 
 @router.get("/competitions", response_model=list[Competition])
@@ -78,3 +113,16 @@ def create_moment(body: MomentRequest) -> MomentCreated:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return MomentCreated(slug=slug)
+
+
+@router.post("/analyse", response_model=AnalyseReady)
+def analyse_match(body: AnalyseRequest) -> AnalyseReady:
+    """Store any open-data match so Analyst Mode can show it. Takes a few
+    seconds the first time a match is used."""
+    try:
+        match_id = moments.ensure_match(body.competition_id, body.season_id, body.match_id)
+    except moments.SourceUnavailable as exc:
+        raise _unavailable(exc) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return AnalyseReady(match_id=match_id)

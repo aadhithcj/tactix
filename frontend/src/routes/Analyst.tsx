@@ -1,13 +1,15 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Send } from 'lucide-react'
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router'
 import { competitionName, Scoreline, SiteFooter, SiteHeader, teamCode } from '../components/Chrome'
+import { Listbox } from '../components/Listbox'
+import { MomentumChart } from '../components/MomentumChart'
 import { PassNetworkView } from '../components/PassNetwork'
 import { ShotMap } from '../components/ShotMap'
 import { api } from '../lib/api'
-import { kitPair, kitVars } from '../lib/kits'
-import type { MatchDetail, MomentumBucket, PassNetwork, TeamStats } from '../lib/types'
+import { kitPair, kitVars, knownKit } from '../lib/kits'
+import type { MatchDetail, PassNetwork, TeamStats } from '../lib/types'
 
 type Tab = 'shots' | 'network' | 'momentum'
 
@@ -46,7 +48,6 @@ function MatchView({ id, all }: { id: number; all: { id: number; home_team: { na
   const navigate = useNavigate()
   const match = useQuery({ queryKey: ['match', id], queryFn: () => api.match(id) })
   const [tab, setTab] = useState<Tab>('shots')
-  const pickerId = useId()
 
   return (
     <div className="mx-auto max-w-[1320px] px-4 py-8 sm:px-6 sm:py-10">
@@ -56,23 +57,19 @@ function MatchView({ id, all }: { id: number; all: { id: number; home_team: { na
           <p className="mt-2 max-w-[60ch] text-ink-soft">The evidence behind every moment, straight from the match event data.</p>
         </div>
         {all.length > 0 && (
-          <div className="w-full sm:w-auto">
-            <label htmlFor={pickerId} className="block text-sm font-semibold">
-              Match
-            </label>
-            <select
-              id={pickerId}
-              value={id}
-              onChange={(e) => navigate(`/analyst/${e.target.value}`)}
-              className="mt-1 min-h-11 w-full max-w-full rounded-[10px] border-2 border-ink bg-paper px-3 pr-8 font-semibold sm:w-auto"
-            >
-              {all.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.home_team?.name} v {m.away_team?.name}, {competitionName(m.competition)} {m.season}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Listbox
+            label="Match"
+            value={id}
+            onChange={(v) => navigate(`/analyst/${v}`)}
+            action={{ label: 'Choose any match…', onSelect: () => navigate('/moments/new?mode=analyse') }}
+            className="w-full sm:w-[26rem]"
+            options={all.map((m) => ({
+              value: m.id,
+              label: `${m.home_team?.name ?? 'Home'} v ${m.away_team?.name ?? 'Away'}`,
+              detail: `${competitionName(m.competition)} ${m.season}`,
+              icon: <KitPair home={m.home_team?.name ?? ''} away={m.away_team?.name ?? ''} />,
+            }))}
+          />
         )}
       </div>
 
@@ -111,7 +108,7 @@ function MatchView({ id, all }: { id: number; all: { id: number; home_team: { na
               <div role="tabpanel">
                 {tab === 'shots' && <ShotsTab match={match.data} />}
                 {tab === 'network' && <NetworkTab match={match.data} />}
-                {tab === 'momentum' && <MomentumTab timeline={match.data.stats.momentum_timeline ?? []} />}
+                {tab === 'momentum' && <MomentumChart match={match.data} timeline={match.data.stats.momentum_timeline ?? []} />}
               </div>
             </section>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-6">
@@ -120,11 +117,14 @@ function MatchView({ id, all }: { id: number; all: { id: number; home_team: { na
                 <div className="panel bg-yellow p-5">
                   <h2 className="text-xl font-[850]">Think you'd have done better?</h2>
                   <p className="mt-1">This match has a moment you can manage.</p>
-                  {match.data.scenario_slugs.map((slug) => (
-                    <Link key={slug} to={`/play/${slug}`} className="btn btn-ink lift mt-4">
-                      Play the moment
-                    </Link>
-                  ))}
+                  <div className="mt-4 flex flex-wrap gap-2.5">
+                    {match.data.scenario_slugs.map((slug) => (
+                      <Link key={slug} to={`/play/${slug}`} className="btn btn-ink lift">
+                        {/* Slugs end with the minute the moment is frozen at. */}
+                        Play from {slug.split('-').pop()}'
+                      </Link>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -241,64 +241,6 @@ function NetworkTab({ match }: { match: MatchDetail }) {
   )
 }
 
-function MomentumTab({ timeline }: { timeline: MomentumBucket[] }) {
-  if (!timeline.length) return <p className="p-6">No momentum data for this match.</p>
-  const max = Math.max(...timeline.map((b) => Math.abs(b.momentum)), 0.5)
-  const W = 120
-  const H = 64
-  const mid = H / 2
-  const bw = W / timeline.length
-  const home = timeline[0].team_home
-  const away = timeline[0].team_away
-  return (
-    <div className="p-4 sm:p-5">
-      <p className="text-sm text-ink-soft">
-        Each bar is five minutes. Up means {home} were on top, down means {away}. Built from xG and forward passes.
-      </p>
-      <svg viewBox={`0 0 ${W} ${H + 8}`} className="mt-3 block w-full" role="img" aria-label={`Momentum by five-minute spell, ${home} above the line and ${away} below`}>
-        {[45, 90, 105].map((m) => {
-          const x = (m / 5) * bw
-          return x < W ? (
-            <g key={m}>
-              <line x1={x} y1={2} x2={x} y2={H - 2} stroke="var(--color-ink)" strokeWidth={0.2} strokeDasharray="1 1" />
-              <text x={x + 0.8} y={4.5} fontSize={2.4} fill="var(--color-ink-soft)">
-                {m}'
-              </text>
-            </g>
-          ) : null
-        })}
-        {timeline.map((b, i) => {
-          const h = (Math.abs(b.momentum) / max) * (mid - 4)
-          const up = b.momentum >= 0
-          return (
-            <rect key={b.interval} x={i * bw + bw * 0.12} y={up ? mid - h : mid} width={bw * 0.76} height={Math.max(h, 0.3)} rx={0.6} fill={up ? 'var(--kit-you, var(--color-sky))' : 'var(--kit-them, var(--color-vermilion))'} stroke="var(--color-ink)" strokeWidth={0.3}>
-              <title>{`Minutes ${b.interval}: xG ${b.home_xg.toFixed(2)} v ${b.away_xg.toFixed(2)}, forward passes ${b.home_progressive_passes} v ${b.away_progressive_passes}`}</title>
-            </rect>
-          )
-        })}
-        <line x1={0} y1={mid} x2={W} y2={mid} stroke="var(--color-ink)" strokeWidth={0.5} />
-        {[0, 30, 60, 90, 120].map((m) => {
-          const x = (m / 5) * bw
-          return x <= W ? (
-            <text key={m} x={Math.min(x, W - 4)} y={H + 6} fontSize={2.6} fill="var(--color-ink-soft)">
-              {m}'
-            </text>
-          ) : null
-        })}
-      </svg>
-      <ul className="mt-3 flex gap-4 text-sm">
-        <li className="flex items-center gap-1.5">
-          <span className="size-3 rounded-sm border-2 border-ink" style={{ background: 'var(--kit-you, var(--color-sky))' }} />
-          {home}
-        </li>
-        <li className="flex items-center gap-1.5">
-          <span className="size-3 rounded-sm border-2 border-ink" style={{ background: 'var(--kit-them, var(--color-vermilion))' }} />
-          {away}
-        </li>
-      </ul>
-    </div>
-  )
-}
 
 const SUGGESTIONS = ['Who created the better chances?', 'When did the momentum swing?', 'How did the passing compare?']
 
@@ -367,5 +309,24 @@ function AskPanel({ matchId }: { matchId: number }) {
         </button>
       </form>
     </section>
+  )
+}
+
+/** Two small kit swatches for a fixture; teams without known colours get an outline. */
+function KitPair({ home, away }: { home: string; away: string }) {
+  const dot = (team: string) => {
+    const kit = knownKit(team)
+    return (
+      <span
+        className={`size-3.5 rounded-full border-2 ${kit ? 'border-ink' : 'border-ink/40'}`}
+        style={{ background: kit?.fill ?? 'transparent' }}
+      />
+    )
+  }
+  return (
+    <span className="flex shrink-0 -space-x-1" aria-hidden="true">
+      {dot(home)}
+      {dot(away)}
+    </span>
   )
 }

@@ -91,3 +91,23 @@ def test_catalog_source_down_is_502() -> None:
         res = client.get("/api/catalog/competitions")
     assert res.status_code == 502
     assert "couldn't be reached" in res.json()["detail"]
+
+
+def test_library_reports_not_ready_then_ready() -> None:
+    client = TestClient(app)
+    with patch.object(moments, "get_library", return_value=None):
+        assert client.get("/api/catalog/library").json() == {"ready": False, "seasons": [], "matches": []}
+    season = {"competition_id": 16, "season_id": 4, "competition": "Champions League", "season": "2018/2019", "country": "Europe", "gender": "male", "matches": 1}
+    library = {"seasons": [season], "matches": [{**MATCH, "competition_id": 16, "season_id": 4}], "built_at": "2026-01-01T00:00:00+00:00"}
+    with patch.object(moments, "get_library", return_value=library):
+        body = client.get("/api/catalog/library", headers={"Accept-Encoding": "gzip"}).json()
+    assert body["ready"] is True and body["matches"][0]["home"] == "Tottenham Hotspur"
+
+
+def test_analyse_endpoint() -> None:
+    client = TestClient(app)
+    with patch.object(moments, "ensure_match", return_value=22912):
+        res = client.post("/api/catalog/analyse", json={"competition_id": 16, "season_id": 4, "match_id": 22912})
+    assert res.status_code == 200 and res.json() == {"match_id": 22912}
+    with patch.object(moments, "ensure_match", side_effect=LookupError("nope")):
+        assert client.post("/api/catalog/analyse", json={"competition_id": 16, "season_id": 4, "match_id": 1}).status_code == 404

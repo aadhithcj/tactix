@@ -2,6 +2,7 @@ import { simulateLocally } from './model'
 import type {
   CatalogCompetition,
   CatalogMatch,
+  Library,
   MatchDetail,
   MatchEvent,
   MatchSummary,
@@ -106,12 +107,19 @@ export const api = {
 
   competitions: () => request<CatalogCompetition[]>('/api/catalog/competitions'),
 
+  /** Every open-data match; ready is false while the server is still building it. */
+  library: () => request<Library>('/api/catalog/library'),
+
   catalogMatches: (competitionId: number, seasonId: number) =>
     request<CatalogMatch[]>(`/api/catalog/matches?competition_id=${competitionId}&season_id=${seasonId}`),
 
   /** Build (or reuse) a playable moment from any open-data match. */
   createMoment: (body: { competition_id: number; season_id: number; match_id: number; minute: number }) =>
     request<{ slug: string }>('/api/catalog/moments', { method: 'POST', body: JSON.stringify(body) }),
+
+  /** Store any open-data match so Analyst Mode can show it. */
+  analyse: (body: { competition_id: number; season_id: number; match_id: number }) =>
+    request<{ match_id: number }>('/api/catalog/analyse', { method: 'POST', body: JSON.stringify(body) }),
 
   ask: (id: number, question: string) =>
     request<{ answer: string; source: 'gemini' | 'model' }>(

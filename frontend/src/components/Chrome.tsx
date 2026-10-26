@@ -14,6 +14,13 @@ export function Mark({ size = 28 }: { size?: number }) {
   )
 }
 
+/** Header links: an outlined pill on hover, solid ink for the page you're on. */
+function navPill(active: boolean) {
+  return `min-h-11 items-center whitespace-nowrap rounded-full border-2 px-2.5 text-[0.95rem] font-[750] transition-colors sm:px-3.5 sm:text-base ${
+    active ? 'border-ink bg-ink text-cream' : 'border-transparent hover:border-ink hover:bg-paper'
+  }`
+}
+
 export function SiteHeader({ tone = 'cream' }: { tone?: 'cream' | 'paper' }) {
   return (
     <header className={`border-b-2 border-ink ${tone === 'paper' ? 'bg-paper' : 'bg-cream'}`}>
@@ -25,17 +32,13 @@ export function SiteHeader({ tone = 'cream' }: { tone?: 'cream' | 'paper' }) {
         <nav className="flex items-center gap-1 min-[380px]:gap-2 sm:gap-4" aria-label="Main">
           <NavLink
             to="/moments/new"
-            className={({ isActive }) =>
-              `hidden whitespace-nowrap rounded-md px-2 py-2 font-semibold underline-offset-4 hover:underline md:inline-block ${isActive ? 'underline' : ''}`
-            }
+            className={({ isActive }) => `hidden md:inline-flex ${navPill(isActive)}`}
           >
             Any match
           </NavLink>
           <NavLink
             to="/analyst"
-            className={({ isActive }) =>
-              `whitespace-nowrap rounded-md px-1.5 py-2 text-[0.95rem] font-semibold underline-offset-4 hover:underline sm:px-2 sm:text-base ${isActive ? 'underline' : ''}`
-            }
+            className={({ isActive }) => `inline-flex ${navPill(isActive)}`}
             aria-label="Analyst Mode"
           >
             <span className="hidden min-[380px]:inline">Analyst Mode</span>

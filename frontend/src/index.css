@@ -139,6 +139,13 @@
     transform: translate(-3px, -3px);
     box-shadow: var(--shadow-lift);
   }
+  /* Dark buttons can't cast an ink shadow on ink, so they cast an outlined paper block. */
+  .btn-ink.lift:hover:not(:disabled),
+  .btn-ink.lift:focus-visible {
+    box-shadow:
+      4px 4px 0 0 var(--color-paper),
+      4px 4px 0 2px var(--color-ink);
+  }
   .lift:active:not(:disabled) {
     transform: translate(0, 0);
     box-shadow: none;

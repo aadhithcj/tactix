@@ -1,8 +1,8 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, Date, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -110,3 +110,13 @@ class Scenario(Base):
     snapshot: Mapped[dict[str, Any]] = mapped_column(JSON)
 
     match: Mapped[Match] = relationship("Match", back_populates="scenarios")
+
+
+class CatalogCache(Base):
+    """Cached copies of slow upstream lookups, such as the open-data match library."""
+
+    __tablename__ = "catalog_cache"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

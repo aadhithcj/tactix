@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import delete, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app import models
@@ -91,12 +91,19 @@ def test_get_match_stats_success(client: TestClient) -> None:
             db.merge(match_obj)
             db.commit()
 
-        response = client.get("/api/matches/99999/stats")
-        assert response.status_code == 200
-        data = response.json()
-        assert "team_stats" in data
-        assert "pass_networks" in data
-        assert "momentum_timeline" in data
+        try:
+            response = client.get("/api/matches/99999/stats")
+            assert response.status_code == 200
+            data = response.json()
+            assert "team_stats" in data
+            assert "pass_networks" in data
+            assert "momentum_timeline" in data
+        finally:
+            # Never leave test rows behind in a real database.
+            with SessionLocal() as db:
+                db.execute(delete(models.Match).where(models.Match.id == 99999))
+                db.execute(delete(models.Team).where(models.Team.id.in_([991, 992])))
+                db.commit()
     else:
         mock_match = MagicMock()
         mock_match.stats_json = {

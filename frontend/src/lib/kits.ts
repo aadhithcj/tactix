@@ -74,6 +74,11 @@ export function codeFor(team: string): string {
   return lookup(team)?.code ?? normalise(team).slice(0, 3).toUpperCase()
 }
 
+/** The team's real home kit, or undefined when we don't have its colours. */
+export function knownKit(team: string): Kit | undefined {
+  return lookup(team)?.home
+}
+
 /** Home kit for a team, by name or code. */
 export function kitFor(team: string, fallback: 'home' | 'away' = 'home'): Kit {
   return lookup(team)?.home ?? (fallback === 'home' ? FALLBACK_HOME : FALLBACK_AWAY)

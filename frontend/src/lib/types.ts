@@ -253,6 +253,21 @@ export interface CatalogMatch {
   stadium: string
 }
 
+export interface LibrarySeason extends CatalogCompetition {
+  matches: number
+}
+
+export interface LibraryMatch extends CatalogMatch {
+  competition_id: number
+  season_id: number
+}
+
+export interface Library {
+  ready: boolean
+  seasons: LibrarySeason[]
+  matches: LibraryMatch[]
+}
+
 export interface MatchEvent {
   id: string
   minute: number
