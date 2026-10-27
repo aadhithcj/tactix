@@ -65,7 +65,7 @@ function placeLabels(you: Token[], them: Token[], vertical: boolean, keyThreat?:
   return out
 }
 
-function useVertical(mode: PitchProps['orientation']) {
+export function useVertical(mode: PitchProps['orientation']) {
   const [narrow, setNarrow] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 640px)').matches : false,
   )

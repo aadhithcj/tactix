@@ -1,4 +1,4 @@
-import { simulateLocally } from './model'
+import { reportLocally, simulateLocally } from './model'
 import type {
   CatalogCompetition,
   CatalogMatch,
@@ -6,6 +6,7 @@ import type {
   MatchDetail,
   MatchEvent,
   MatchSummary,
+  ReportRequest,
   ScenarioDetail,
   ScenarioSummary,
   SimulationRequest,
@@ -97,6 +98,14 @@ export const api = {
       `/api/scenarios/${slug}/simulate`,
       { method: 'POST', body: JSON.stringify(body) },
       async () => simulateLocally(slug, await fixture<ScenarioDetail>(`scenario-${slug}`), body),
+    ),
+
+  /** The verdict on a live match played out in the browser. */
+  report: (slug: string, body: ReportRequest) =>
+    request<SimulationResult>(
+      `/api/scenarios/${slug}/report`,
+      { method: 'POST', body: JSON.stringify(body) },
+      async () => reportLocally(slug, await fixture<ScenarioDetail>(`scenario-${slug}`), body, body.live),
     ),
 
   matches: () => request<MatchSummary[]>('/api/matches', undefined, () => fixture('matches')),

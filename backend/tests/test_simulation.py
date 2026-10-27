@@ -12,6 +12,7 @@ from app.services.pundit import pundit_take
 from app.services.simulation import (
     PRESETS,
     evaluate,
+    match_rating,
     profile_from_text,
     suggest_shape,
     threat_coverage,
@@ -134,3 +135,47 @@ def test_simulate_rejects_unavailable_sub(scenario_client: TestClient) -> None:
 def test_simulate_unknown_scenario(scenario_client: TestClient) -> None:
     res = scenario_client.post("/api/scenarios/nope/simulate", json={"team_id": ARG, "tactic": "park_bus"})
     assert res.status_code == 404
+
+
+def _live(**overrides) -> dict:
+    live = {
+        "start_score": {"for": 2, "against": 0},
+        "final_score": {"for": 2, "against": 1},
+        "xg_for": 0.3,
+        "xg_against": 0.2,
+        "base_xg_for": 0.38,
+        "base_xg_against": 0.36,
+        "fit": 0.9,
+        "minutes": 27,
+        "shots_for": 3,
+        "shots_against": 4,
+        "goals": [{"minute": 88, "team": "them", "player": "Kylian Mbappé"}],
+        "changes": [{"minute": 80, "label": "Parked the bus"}],
+    }
+    return {**live, **overrides}
+
+
+def test_report_rates_the_whole_match(scenario_client: TestClient) -> None:
+    res = scenario_client.post(
+        "/api/scenarios/lusail-2022-71/report",
+        json={"team_id": ARG, "tactic": "park_bus", "live": _live()},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    # Fewer chances allowed than the real shape while protecting a lead rates well.
+    assert body["gaffer_rating"] == match_rating(2, 0.3, 0.2, 0.38, 0.36, 0.9)
+    assert body["projection"]["likely_score"] == {"home": 2, "away": 1}
+    assert body["live"]["final_score"] == {"for": 2, "against": 1}
+    assert body["pundit"]["take"].startswith("Argentina won 2-1")
+
+
+def test_report_must_start_from_the_real_score(scenario_client: TestClient) -> None:
+    res = scenario_client.post(
+        "/api/scenarios/lusail-2022-71/report",
+        json={"team_id": ARG, "tactic": "park_bus", "live": _live(start_score={"for": 0, "against": 0})},
+    )
+    assert res.status_code == 422
+
+
+def test_live_rating_rewards_fewer_chances_allowed() -> None:
+    assert match_rating(1, 0.3, 0.2, 0.3, 0.5, 0.8) > match_rating(1, 0.3, 0.8, 0.3, 0.5, 0.8)

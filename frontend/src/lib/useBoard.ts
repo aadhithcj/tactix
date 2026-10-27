@@ -12,21 +12,22 @@ export function useBoard(detail: ScenarioDetail, teamId: number) {
   const side = detail.snapshot.sides[String(teamId)]
   const opp = Object.values(detail.snapshot.sides).find((s) => s.team_id !== teamId)!
   const [subs, setSubs] = useState<Sub[]>([])
+  // Substitutions made before a live match resumed: they've happened and can't be undone.
+  const [locked, setLocked] = useState(0)
   const [moved, setMoved] = useState<Record<number, { x: number; y: number }>>({})
 
   const onPitch: SnapshotPlayer[] = useMemo(() => {
-    const players = side.players.map((p) => {
-      const sub = subs.find((s) => s.off_id === p.id)
-      if (!sub) return p
-      const incoming = side.bench.find((b) => b.id === sub.on_id)!
-      return {
-        ...incoming,
-        role: incoming.role ?? p.role,
-        position: incoming.position ?? p.position,
-        x: p.x,
-        y: p.y,
-      } as SnapshotPlayer
-    })
+    // In order, so a substitute can later be substituted himself.
+    let players = side.players
+    for (const sub of subs) {
+      const incoming = side.bench.find((b) => b.id === sub.on_id)
+      if (!incoming) continue
+      players = players.map((p) =>
+        p.id === sub.off_id
+          ? ({ ...incoming, role: incoming.role ?? p.role, position: incoming.position ?? p.position, x: p.x, y: p.y } as SnapshotPlayer)
+          : p,
+      )
+    }
     return players.map((p) => (moved[p.id] ? { ...p, ...moved[p.id] } : p))
   }, [side, subs, moved])
 
@@ -53,20 +54,21 @@ export function useBoard(detail: ScenarioDetail, teamId: number) {
 
   const substitute = useCallback(
     (offId: number, onId: number) => {
-      // Subbing a substitute who just came on swaps the original slot.
+      // Subbing a substitute who just came on swaps the original slot,
+      // unless that substitution has already happened in a live match.
       setSubs((current) => {
-        const existing = current.find((s) => s.on_id === offId)
-        if (existing) return current.map((s) => (s === existing ? { ...s, on_id: onId } : s))
+        const existing = current.findIndex((s) => s.on_id === offId)
+        if (existing >= locked) return current.map((s, i) => (i === existing ? { ...s, on_id: onId } : s))
         return [...current, { off_id: offId, on_id: onId }]
       })
       setMoved((m) => {
-        const pos = m[offId] ?? side.players.find((p) => p.id === offId)
+        const pos = m[offId] ?? onPitch.find((p) => p.id === offId)
         const rest = { ...m }
         delete rest[offId]
         return pos ? { ...rest, [onId]: { x: pos.x, y: pos.y } } : rest
       })
     },
-    [side],
+    [locked, onPitch],
   )
 
   const undoSub = useCallback((sub: Sub) => {
@@ -81,8 +83,10 @@ export function useBoard(detail: ScenarioDetail, teamId: number) {
 
   const reset = useCallback(() => {
     setMoved({})
-    setSubs([])
-  }, [])
+    setSubs((current) => current.slice(0, locked))
+  }, [locked])
+
+  const lockSubs = useCallback((count?: number) => setLocked(count ?? subs.length), [subs.length])
 
   const usedBench = new Set(subs.map((s) => s.on_id))
   const subsLeft = side.subs_allowed - side.subs_used - subs.length
@@ -103,6 +107,8 @@ export function useBoard(detail: ScenarioDetail, teamId: number) {
     substitute,
     undoSub,
     reset,
+    lockSubs,
+    isLocked: (sub: Sub) => subs.indexOf(sub) < locked,
     placements: onPitch.map((p) => ({ player_id: p.id, x: p.x, y: p.y })),
   }
 }

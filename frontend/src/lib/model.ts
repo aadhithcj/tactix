@@ -8,6 +8,7 @@
 import type {
   ExposedZone,
   Finding,
+  LiveSummary,
   Metric,
   ScenarioDetail,
   SimulationRequest,
@@ -25,7 +26,7 @@ const COVER_SIGMA = 9
 const MARK_SIGMA = 8
 const FINAL_THIRD_X = 80
 
-interface Profile {
+export interface Profile {
   depth: number
   press: number
   marking: number
@@ -52,7 +53,7 @@ const KEYWORDS: [RegExp, Partial<Record<keyof Omit<Profile, 'label'>, number>>][
 
 const clamp = (v: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v))
 
-function profileFromText(plan: string): Profile {
+export function profileFromText(plan: string): Profile {
   const p = { ...NEUTRAL }
   const text = plan.toLowerCase()
   for (const [re, deltas] of KEYWORDS) {
@@ -161,7 +162,7 @@ export function zoneLabel(x: number, y: number) {
   return `${lane}, ${depth}`
 }
 
-function baselineRate(observed: number, minute: number, deficit: number) {
+export function baselineRate(observed: number, minute: number, deficit: number) {
   const prior = 20
   const typical = 1.35 / 90
   let rate = (observed * minute + typical * prior) / (minute + prior)
@@ -170,7 +171,7 @@ function baselineRate(observed: number, minute: number, deficit: number) {
   return rate
 }
 
-function ratingLabel(r: number) {
+export function ratingLabel(r: number) {
   if (r >= 8.5) return 'Masterclass'
   if (r >= 7) return 'Shrewd call'
   if (r >= 5.5) return 'Did a job'
@@ -191,17 +192,29 @@ const OPENINGS: Partial<Record<TacticKey, string>> = {
 
 const round = (v: number, d = 2) => Math.round(v * 10 ** d) / 10 ** d
 
-export function simulateLocally(slug: string, detail: ScenarioDetail, req: SimulationRequest): SimulationResult {
-  const snap = detail.snapshot
-  const side = snap.sides[String(req.team_id)]
-  const oppId = Object.keys(snap.sides).find((k) => k !== String(req.team_id))!
-  const opp = snap.sides[oppId]
+/** Gaffer Rating: did the decisions move the expected goals the right way for
+ * the game state? Mirrors match_rating() in simulation.py. */
+export function matchRating(lead: number, xgFor: number, xgAgainst: number, baseFor: number, baseAgainst: number, fit: number) {
+  const [wFor, wAgainst] =
+    lead >= 2 ? [0.35, 1.6] : lead === 1 ? [0.6, 1.4] : lead === 0 ? [1, 1] : lead === -1 ? [1.4, 0.7] : [1.7, 0.4]
+  const utility = wFor * (xgFor - baseFor) - wAgainst * (xgAgainst - baseAgainst)
+  const scale = Math.max(0.25, baseFor + baseAgainst)
+  const raw = 6 * (utility / scale) + 2.2 * (fit - 0.55)
+  return round(clamp(5.8 + 4.2 * Math.tanh(raw / 4), 1, 10), 1)
+}
+
+export type Setup = Pick<SimulationRequest, 'tactic' | 'custom_plan' | 'placements' | 'substitutions'>
+
+/** How one set-up scales each side's real chance rate. `minute` drives the
+ * late-press term, so a live match re-reads it as the clock runs. */
+export function setupRates(detail: ScenarioDetail, teamId: number, setup: Setup, minute: number) {
+  const side = detail.snapshot.sides[String(teamId)]
   const profile: Profile =
-    req.tactic === 'custom' ? profileFromText(req.custom_plan ?? '') : PRESETS[req.tactic]
+    setup.tactic === 'custom' ? profileFromText(setup.custom_plan ?? '') : PRESETS[setup.tactic]
 
   const onPitch = new Map<number, SnapshotPlayer>(side.players.map((p) => [p.id, { ...p }]))
   const subNotes: { off: SnapshotPlayer; on: SnapshotPlayer }[] = []
-  for (const s of req.substitutions) {
+  for (const s of setup.substitutions) {
     const off = onPitch.get(s.off_id)
     const incoming = side.bench.find((b) => b.id === s.on_id)
     if (!off || !incoming) continue
@@ -216,7 +229,7 @@ export function simulateLocally(slug: string, detail: ScenarioDetail, req: Simul
     onPitch.set(on.id, on)
     subNotes.push({ off, on })
   }
-  for (const pl of req.placements) {
+  for (const pl of setup.placements) {
     const p = onPitch.get(pl.player_id)
     if (p) {
       p.x = clamp(pl.x, 0, PITCH_X)
@@ -227,12 +240,6 @@ export function simulateLocally(slug: string, detail: ScenarioDetail, req: Simul
   const base = shapeMetrics(side.players, side)
   const user = shapeMetrics(players, side)
   const fit = structureFit(user, profile)
-
-  const minute = snap.minute
-  const horizon = snap.horizon_minutes
-  const goalsFor = side.is_home ? snap.score.home : snap.score.away
-  const goalsAgainst = side.is_home ? snap.score.away : snap.score.home
-  const lead = goalsFor - goalsAgainst
 
   let against = 1
   against *= 1 - 0.56 * (0.5 - profile.depth)
@@ -254,20 +261,36 @@ export function simulateLocally(slug: string, detail: ScenarioDetail, req: Simul
     else if ((n.on.role === 'DEF' || n.on.role === 'MID') && profile.depth <= 0.5) against *= 0.96
     else forMult *= 1.02
   }
-  against = clamp(against, 0.3, 2.5)
-  forMult = clamp(forMult, 0.25, 2.5)
+  return {
+    profile,
+    players,
+    subNotes,
+    base,
+    user,
+    fit,
+    against: clamp(against, 0.3, 2.5),
+    forMult: clamp(forMult, 0.25, 2.5),
+  }
+}
+
+export function simulateLocally(slug: string, detail: ScenarioDetail, req: SimulationRequest): SimulationResult {
+  const snap = detail.snapshot
+  const side = snap.sides[String(req.team_id)]
+  const oppId = Object.keys(snap.sides).find((k) => k !== String(req.team_id))!
+  const opp = snap.sides[oppId]
+  const minute = snap.minute
+  const horizon = snap.horizon_minutes
+  const { profile, players, subNotes, base, user, fit, against, forMult } = setupRates(detail, req.team_id, req, minute)
+
+  const goalsFor = side.is_home ? snap.score.home : snap.score.away
+  const goalsAgainst = side.is_home ? snap.score.away : snap.score.home
+  const lead = goalsFor - goalsAgainst
 
   const baseFor = baselineRate(side.baseline.xg_for_per_min, minute, -lead) * horizon
   const baseAgainst = baselineRate(side.baseline.xg_against_per_min, minute, lead) * horizon
   const projFor = baseFor * forMult
   const projAgainst = baseAgainst * against
-
-  const [wFor, wAgainst] =
-    lead >= 2 ? [0.35, 1.6] : lead === 1 ? [0.6, 1.4] : lead === 0 ? [1, 1] : lead === -1 ? [1.4, 0.7] : [1.7, 0.4]
-  const utility = wFor * (projFor - baseFor) - wAgainst * (projAgainst - baseAgainst)
-  const scale = Math.max(0.25, baseFor + baseAgainst)
-  const raw = 6 * (utility / scale) + 2.2 * (fit - 0.55)
-  const rating = round(clamp(5.8 + 4.2 * Math.tanh(raw / 4), 1, 10), 1)
+  const rating = matchRating(lead, projFor, projAgainst, baseFor, baseAgainst, fit)
 
   const finalFor = goalsFor + Math.floor(projFor)
   const finalAgainst = goalsAgainst + Math.floor(projAgainst)
@@ -344,5 +367,33 @@ export function simulateLocally(slug: string, detail: ScenarioDetail, req: Simul
     actual: { ...snap.actual, xg_for_after: side.actual_after.xg_for, xg_against_after: side.actual_after.xg_against },
     model_note:
       'Offline estimate from the in-browser copy of the model. Projections are expected goals, not predictions of the result.',
+  }
+}
+
+/** Offline verdict on a live match: the whole match rated, as the server does. */
+export function reportLocally(slug: string, detail: ScenarioDetail, req: SimulationRequest, live: LiveSummary): SimulationResult {
+  const result = simulateLocally(slug, detail, req)
+  const side = detail.snapshot.sides[String(req.team_id)]
+  const lead = live.start_score.for - live.start_score.against
+  const rating = matchRating(lead, live.xg_for, live.xg_against, live.base_xg_for, live.base_xg_against, live.fit)
+  const { for: f, against: a } = live.final_score
+  return {
+    ...result,
+    gaffer_rating: rating,
+    rating_label: ratingLabel(rating),
+    projection: {
+      minutes: live.minutes,
+      xg_for: live.xg_for,
+      xg_against: live.xg_against,
+      baseline_xg_for: live.base_xg_for,
+      baseline_xg_against: live.base_xg_against,
+      likely_score: side.is_home ? { home: f, away: a } : { home: a, away: f },
+    },
+    pundit: {
+      headline: rating >= 7 ? `${side.name} managed it well` : rating >= 5.5 ? 'Steady hands on the touchline' : 'Questions to answer',
+      take: `${side.name} ${f > a ? 'won' : f < a ? 'lost' : 'drew'} ${f}-${a}. Over the last ${live.minutes} minutes your set-ups created ${live.xg_for.toFixed(2)} xG and allowed ${live.xg_against.toFixed(2)}, against ${live.base_xg_for.toFixed(2)} and ${live.base_xg_against.toFixed(2)} if nothing had changed.`,
+      source: 'model',
+    },
+    live,
   }
 }

@@ -1,12 +1,15 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { ArrowLeft, RotateCcw, Undo2 } from 'lucide-react'
+import { ArrowLeft, Lock, RotateCcw, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router'
 import { competitionName, Scoreline, SiteFooter, SiteHeader } from '../components/Chrome'
+import { clock, LiveMatch, type Speed } from '../components/LiveMatch'
 import { mirror, Pitch, toTokens, ZONE_H, ZONE_W } from '../components/Pitch'
 import { TACTICS, TacticGlyph } from '../components/TacticGlyph'
 import { Verdict } from '../components/Verdict'
 import { api } from '../lib/api'
+import { LiveEngine } from '../lib/engine'
+import type { Setup } from '../lib/model'
 import type { ScenarioDetail, SimulationResult, TacticKey } from '../lib/types'
 import { kitFor, kitVars } from '../lib/kits'
 import { shortName } from '../lib/names'
@@ -178,6 +181,11 @@ function Touchline({
   const [showThreat, setShowThreat] = useState(true)
   const [showGhosts, setShowGhosts] = useState(true)
   const [result, setResult] = useState<SimulationResult | null>(null)
+  // The live match: kicked off from the board, paused back to it, resumed from it.
+  const engine = useRef<LiveEngine | null>(null)
+  const [live, setLive] = useState(false)
+  const [speed, setSpeed] = useState<Speed>(1)
+  const lastSetup = useRef<Snapshot | null>(null)
   const top = useRef<HTMLDivElement>(null)
 
   const chooseTactic = (t: TacticKey) => {
@@ -195,18 +203,38 @@ function Touchline({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const simulate = useMutation({
-    mutationFn: () =>
-      api.simulate(detail.slug, {
-        team_id: teamId,
-        tactic: tactic!,
-        custom_plan: tactic === 'custom' ? plan : null,
-        placements: board.placements,
-        substitutions: board.subs,
-      }),
+  const setup = (): Setup => ({
+    tactic: tactic!,
+    custom_plan: tactic === 'custom' ? plan : null,
+    placements: board.placements,
+    substitutions: board.subs,
+  })
+  const current = (): Snapshot => ({ tactic, plan, placements: JSON.stringify(board.placements), subs: board.subs.length })
+  const toTop = () => requestAnimationFrame(() => top.current?.scrollIntoView({ block: 'start' }))
+
+  const kickOff = () => {
+    engine.current = new LiveEngine(detail, teamId, setup(), Math.floor(Math.random() * 2 ** 31))
+    board.lockSubs()
+    lastSetup.current = current()
+    setLive(true)
+    toTop()
+  }
+
+  const resume = () => {
+    const label = describeChange(lastSetup.current, current(), board)
+    if (label) engine.current!.setSetup(setup(), label)
+    board.lockSubs()
+    lastSetup.current = current()
+    setLive(true)
+    toTop()
+  }
+
+  const report = useMutation({
+    mutationFn: () => api.report(detail.slug, { team_id: teamId, ...setup(), live: engine.current!.summary() }),
     onSuccess: (r) => {
       setResult(r)
-      top.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setLive(false)
+      toTop()
     },
   })
 
@@ -217,14 +245,38 @@ function Touchline({
           detail={detail}
           result={result}
           onRetry={() => {
+            engine.current = null
+            board.lockSubs(0)
+            report.reset()
             setResult(null)
-            requestAnimationFrame(() => top.current?.scrollIntoView({ block: 'start' }))
+            toTop()
           }}
         />
       </div>
     )
   }
 
+  if (live && engine.current) {
+    return (
+      <div ref={top} className="scroll-mt-4" style={kitVars(side.name, opp.name)}>
+        <LiveMatch
+          detail={detail}
+          engine={engine.current}
+          onPause={() => {
+            setLive(false)
+            toTop()
+          }}
+          onFullTime={() => report.mutate()}
+          reporting={report.isPending}
+          error={report.error?.message ?? null}
+          speed={speed}
+          onSpeed={setSpeed}
+        />
+      </div>
+    )
+  }
+
+  const paused = engine.current
   const heat = board.exposure.map((z) => ({ x: z.x - ZONE_W / 2, y: z.y - ZONE_H / 2, w: ZONE_W, h: ZONE_H, value: z.open }))
   const selectedPlayer = board.onPitch.find((p) => p.id === selected)
   const keyThreat = side.key_threat
@@ -238,9 +290,13 @@ function Touchline({
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 id="board-title" className="text-2xl font-[850] sm:text-3xl">
-              Set your shape
+              {paused ? 'Change it up' : 'Set your shape'}
             </h1>
-            <p className="mt-1 max-w-[62ch] text-ink-soft">{side.dilemma}</p>
+            <p className="mt-1 max-w-[62ch] text-ink-soft">
+              {paused
+                ? `The clock is stopped at ${clock(paused.t)}. Move players, make a substitution or switch plans, then send them back out.`
+                : side.dilemma}
+            </p>
           </div>
         </div>
 
@@ -331,20 +387,19 @@ function Touchline({
             </p>
           )}
 
+          {paused && <PausedScore engine={paused} detail={detail} />}
           <button
             type="button"
             className="btn btn-primary lift mt-5 w-full text-lg"
-            disabled={!tactic || needsPlan || simulate.isPending}
-            onClick={() => simulate.mutate()}
+            disabled={!tactic || needsPlan}
+            onClick={paused ? resume : kickOff}
           >
-            {simulate.isPending ? 'Playing out the last minutes…' : 'Blow the whistle'}
+            {paused ? 'Resume the match' : 'Blow the whistle'}
           </button>
           {!tactic && <p className="mt-2 text-center text-sm text-ink-soft">Pick a plan to play it out.</p>}
           {needsPlan && <p className="mt-2 text-center text-sm text-ink-soft">Write a sentence or two about your plan first.</p>}
-          {simulate.error && (
-            <p role="alert" className="mt-3 rounded-[10px] border-2 border-vermilion-deep bg-vermilion/15 px-3 py-2 text-sm font-semibold">
-              {simulate.error.message}
-            </p>
+          {!paused && tactic && !needsPlan && (
+            <p className="mt-2 text-center text-sm text-ink-soft">The match plays out live. You can stop it and change things.</p>
           )}
         </div>
       </aside>
@@ -352,6 +407,53 @@ function Touchline({
       <div className="min-w-0 lg:col-start-1">
         <PlayerDesk selected={selectedPlayer ?? null} board={board} onSubbed={(id) => setSelected(id)} />
       </div>
+    </div>
+  )
+}
+
+/** The parts of a set-up that count as a change worth logging. */
+interface Snapshot {
+  tactic: TacticKey | null
+  plan: string
+  placements: string
+  subs: number
+}
+
+/** What the manager changed while the clock was stopped, for the match log. */
+function describeChange(before: Snapshot | null, after: Snapshot, board: ReturnType<typeof useBoard>) {
+  if (!before) return null
+  const parts: string[] = []
+  if (after.tactic !== before.tactic || (after.tactic === 'custom' && after.plan.trim() !== before.plan.trim())) {
+    const title = TACTICS.find((t) => t.key === after.tactic)?.title ?? 'a new plan'
+    parts.push(after.tactic === 'custom' ? `new plan, "${after.plan.trim().slice(0, 80)}"` : `switched to ${title.toLowerCase()}`)
+  }
+  for (const sub of board.subs.slice(before.subs)) {
+    const on = board.side.bench.find((b) => b.id === sub.on_id)?.name
+    const off = [...board.side.players, ...board.side.bench].find((p) => p.id === sub.off_id)?.name
+    parts.push(`${on} on for ${off}`)
+  }
+  if (!parts.length && after.placements !== before.placements) parts.push('reshaped the team')
+  if (!parts.length) return null
+  const text = parts.join(', ')
+  return text[0].toUpperCase() + text.slice(1) + '.'
+}
+
+function PausedScore({ engine, detail }: { engine: LiveEngine; detail: ScenarioDetail }) {
+  const snap = detail.snapshot
+  const side = snap.sides[String(engine.teamId)]
+  const home = snap.sides[String(snap.match.home_team_id)]
+  const away = snap.sides[String(snap.match.away_team_id)]
+  const { for: f, against: a } = engine.score
+  const score = side.is_home ? { home: f, away: a } : { home: a, away: f }
+  const left = Math.max(0, Math.round((engine.end - engine.t) / 60))
+  return (
+    <div className="mt-4 flex items-center justify-between gap-3 rounded-[10px] bg-ink px-3 py-2.5 text-cream">
+      <span className="score whitespace-nowrap text-xl tabular-nums">
+        {home.code} {score.home}–{score.away} {away.code}
+      </span>
+      <span className="text-sm font-semibold">
+        {clock(engine.t)}, about {left} min left
+      </span>
     </div>
   )
 }
@@ -425,13 +527,19 @@ function PlayerDesk({
         <ul className="mt-3 flex flex-wrap gap-2">
           {board.subs.map((s) => {
             const on = board.side.bench.find((b) => b.id === s.on_id)
-            const off = board.side.players.find((p) => p.id === s.off_id)
+            const off = [...board.side.players, ...board.side.bench].find((p) => p.id === s.off_id)
             return (
               <li key={`${s.off_id}-${s.on_id}`} className="flex items-center gap-2 rounded-full border-2 border-ink bg-yellow py-1 pl-3 pr-1 text-sm font-semibold">
                 {on?.name} on, {off?.name} off
-                <button type="button" onClick={() => board.undoSub(s)} className="rounded-full p-1 hover:bg-paper" aria-label={`Undo: ${on?.name} for ${off?.name}`}>
-                  <Undo2 size={14} strokeWidth={2.5} aria-hidden="true" />
-                </button>
+                {board.isLocked(s) ? (
+                  <span className="p-1" title="Already made in the match">
+                    <Lock size={14} strokeWidth={2.5} aria-label="Already made in the match" />
+                  </span>
+                ) : (
+                  <button type="button" onClick={() => board.undoSub(s)} className="rounded-full p-1 hover:bg-paper" aria-label={`Undo: ${on?.name} for ${off?.name}`}>
+                    <Undo2 size={14} strokeWidth={2.5} aria-hidden="true" />
+                  </button>
+                )}
               </li>
             )
           })}

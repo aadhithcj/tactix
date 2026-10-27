@@ -157,6 +157,26 @@ export interface SimulationRequest {
   substitutions: { off_id: number; on_id: number }[]
 }
 
+/** How a live match went: totals across every set-up the manager used. */
+export interface LiveSummary {
+  start_score: { for: number; against: number }
+  final_score: { for: number; against: number }
+  xg_for: number
+  xg_against: number
+  base_xg_for: number
+  base_xg_against: number
+  fit: number
+  minutes: number
+  shots_for: number
+  shots_against: number
+  goals: { minute: number; team: 'you' | 'them'; player: string }[]
+  changes: { minute: number; label: string }[]
+}
+
+export interface ReportRequest extends SimulationRequest {
+  live: LiveSummary
+}
+
 export interface SimulationResult {
   scenario: string
   team_id: number
@@ -183,6 +203,7 @@ export interface SimulationResult {
   pundit: { headline: string; take: string; source: 'gemini' | 'model' }
   actual: Snapshot['actual'] & { xg_for_after: number; xg_against_after: number }
   model_note: string
+  live?: LiveSummary | null
 }
 
 export interface MatchSummary {

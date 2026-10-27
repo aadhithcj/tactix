@@ -19,6 +19,7 @@ export function Verdict({ detail, result, onRetry }: VerdictProps) {
   const actual = result.actual
   const home = snap.sides[String(snap.match.home_team_id)]
   const away = snap.sides[String(snap.match.away_team_id)]
+  const live = result.live
 
   return (
     <div className="mx-auto max-w-[1320px] px-4 py-8 sm:px-6 sm:py-12">
@@ -76,7 +77,9 @@ export function Verdict({ detail, result, onRetry }: VerdictProps) {
           <p className="mt-1 text-sm text-ink-soft">Expected goals from minute {snap.minute} to full time.</p>
           <XgCompare
             rows={[
-              { label: 'Your plan', note: 'model projection', for: p.xg_for, against: p.xg_against, strong: true },
+              live
+                ? { label: 'Your match', note: 'every set-up you used', for: p.xg_for, against: p.xg_against, strong: true }
+                : { label: 'Your plan', note: 'model projection', for: p.xg_for, against: p.xg_against, strong: true },
               { label: 'If nothing changed', note: 'same shape, same plan', for: p.baseline_xg_for, against: p.baseline_xg_against },
               { label: 'What really happened', note: 'StatsBomb xG', for: actual.xg_for_after, against: actual.xg_against_after },
             ]}
@@ -86,7 +89,7 @@ export function Verdict({ detail, result, onRetry }: VerdictProps) {
 
           <dl className="mt-6 grid gap-3 sm:grid-cols-2">
             <div className="rounded-[10px] bg-cream p-3">
-              <dt className="text-sm font-semibold text-ink-soft">Model's likeliest finish</dt>
+              <dt className="text-sm font-semibold text-ink-soft">{live ? 'Your full time' : "Model's likeliest finish"}</dt>
               <dd className="score mt-1 whitespace-nowrap text-2xl">
                 {home.code} {p.likely_score.home}–{p.likely_score.away} {away.code}
               </dd>
@@ -98,6 +101,7 @@ export function Verdict({ detail, result, onRetry }: VerdictProps) {
               </dd>
             </div>
           </dl>
+          {live && <YourStory live={live} you={side.name} them={opp.name} />}
           <RealStory detail={detail} actual={actual} />
         </div>
       </section>
@@ -163,11 +167,13 @@ export function Verdict({ detail, result, onRetry }: VerdictProps) {
             Would something else have worked?
           </h2>
           <p className="mt-3 max-w-[52ch] text-lg text-ink-soft">
-            Your shape is kept, so you can change one thing and see what moves.
+            {live
+              ? `Your final shape is kept. Replay from minute ${snap.minute} and see if the match goes differently.`
+              : 'Your shape is kept, so you can change one thing and see what moves.'}
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <button type="button" onClick={onRetry} className="btn btn-primary lift">
-              Try another plan
+              {live ? `Replay from ${snap.minute}'` : 'Try another plan'}
             </button>
             <Link to={`/play/${detail.slug}?team=${opp.team_id}`} className="btn btn-plain lift">
               Manage {opp.name} instead
@@ -241,6 +247,37 @@ function XgCompare({ rows, you, them }: { rows: XgRow[]; you: string; them: stri
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+/** How the simulated match went: goals and the changes you made, in order. */
+function YourStory({ live, you, them }: { live: NonNullable<SimulationResult['live']>; you: string; them: string }) {
+  const lines = [
+    ...live.goals.map((g) => ({ minute: g.minute, kind: 'goal' as const, text: `${g.player} (${g.team === 'you' ? you : them})` })),
+    ...live.changes.map((c) => ({ minute: c.minute, kind: 'change' as const, text: c.label })),
+  ].sort((a, b) => a.minute - b.minute)
+  return (
+    <div className="mt-5 border-t-2 border-ink pt-4">
+      <h3 className="font-[800]">How your match went</h3>
+      {lines.length > 0 ? (
+        <ul className="mt-2 grid gap-1 text-sm">
+          {lines.map((l, i) => (
+            <li key={i} className="flex gap-3">
+              <span className="score-narrow w-9 shrink-0 tabular-nums">{l.minute}'</span>
+              <span>
+                {l.kind === 'change' && <span className="mr-1.5 rounded-full bg-ink px-2 py-px text-xs font-[750] text-cream">Your change</span>}
+                {l.text}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-sm">No goals, and you stuck with your first plan.</p>
+      )}
+      <p className="mt-2 text-sm text-ink-soft">
+        Shots: {you} {live.shots_for}, {them} {live.shots_against}.
+      </p>
     </div>
   )
 }

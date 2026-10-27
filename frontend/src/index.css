@@ -271,6 +271,19 @@
 .tx-flash {
   animation: tx-flash 600ms var(--ease-glide) both;
 }
+/* A goal lands like a rubber stamp on the live pitch. */
+@keyframes tx-stamp {
+  from {
+    opacity: 0;
+    transform: scale(1.6) rotate(-10deg);
+  }
+  to {
+    transform: rotate(-3deg);
+  }
+}
+.tx-goal {
+  animation: tx-stamp 380ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
 .tx-glide {
   transition: transform 500ms var(--ease-glide);
 }

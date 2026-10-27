@@ -210,10 +210,15 @@ export default function Home() {
                   />
                 </div>
               )}
-              {canLock && (
+              {canLock ? (
                 <button type="button" onClick={lockIn} className="tx-pop btn btn-ink lift col-start-2 row-start-1 min-h-12" disabled={locking}>
                   {locking ? 'Kick-off…' : 'Lock it in'}
                 </button>
+              ) : (
+                // Straight to the full board for this match, no plan picked yet.
+                <Link to={`/play/${HERO.slug}?team=${teamId}`} className="btn btn-ink lift col-start-2 row-start-1 min-h-12">
+                  Manage {side.name}
+                </Link>
               )}
               </div>
               <p className="sr-only" aria-live="polite">

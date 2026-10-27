@@ -111,7 +111,16 @@ def read_plan(plan: str, team: str, opponent: str, *, use_ai: bool = True) -> tu
 
 
 # ------------------------------------------------------------------ verdict
-def pundit_take(snapshot: dict[str, Any], result: dict[str, Any], plan: str | None, *, use_ai: bool = True) -> dict[str, str]:
+def pundit_take(
+    snapshot: dict[str, Any],
+    result: dict[str, Any],
+    plan: str | None,
+    *,
+    use_ai: bool = True,
+    live: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """`live` is the summary of a match played out in the browser; without it
+    the take judges one set-up's projection."""
     side = snapshot["sides"][str(result["team_id"])]
     opp = snapshot["sides"][str(result["opponent_id"])]
     proj = result["projection"]
@@ -134,12 +143,35 @@ def pundit_take(snapshot: dict[str, Any], result: dict[str, Any], plan: str | No
         "substitutions": result["substitutions"],
         "what_really_happened": snapshot["actual"]["goals_after"],
     }
+    brief = (
+        "Judge the manager's decision using ONLY the facts below. Mention one concrete strength "
+        "and one concrete risk. Compare with what really happened only if it adds something."
+    )
+    if live:
+        for key in ("projected_xg_for", "projected_xg_against", "if_unchanged_xg_for", "if_unchanged_xg_against"):
+            facts[key.replace("projected", "match")] = facts.pop(key)
+        # Two timelines: keep the real match's goals clearly apart from the manager's.
+        facts["real_history_not_this_match"] = facts.pop("what_really_happened")
+        facts["live_match"] = {
+            "final_score_you_vs_them": f"{live['final_score']['for']}-{live['final_score']['against']}",
+            "goals": live["goals"],
+            "tactical_changes": live["changes"],
+            "shots_for": live["shots_for"],
+            "shots_against": live["shots_against"],
+        }
+        brief = (
+            "The manager replayed the rest of this match in a simulation and could change tactics "
+            "along the way. live_match is what happened in THEIR version: its score and goals are "
+            "the only result you may describe as having happened. real_history_not_this_match is "
+            "the real game, a different timeline; never say those goals happened here, and if you "
+            "mention them, say they were in the real match. Judge how they managed it using ONLY "
+            "the facts below: the chances they created and allowed matter more than the scoreline, "
+            "which has luck in it. Mention their final score, one thing they got right and one risk."
+        )
     take = _generate(
         (
-            "You are a sharp, warm TV football pundit. Judge the manager's decision using ONLY the "
-            "facts below. Mention one concrete strength and one concrete risk. Compare with what "
-            "really happened only if it adds something. Never invent statistics or percentages, "
-            "and do not quote the rating number.\n\n"
+            f"You are a sharp, warm TV football pundit. {brief} Never invent statistics or "
+            "percentages, and do not quote the rating number.\n\n"
             f"FACTS:\n{json.dumps(facts, ensure_ascii=False, default=str)}"
         ),
         PunditTake,
@@ -147,7 +179,44 @@ def pundit_take(snapshot: dict[str, Any], result: dict[str, Any], plan: str | No
     )
     if isinstance(take, PunditTake):
         return {"headline": take.headline, "take": take.take, "source": "gemini"}
+    if live:
+        return _template_live_take(side, opp, result, live)
     return _template_take(side, opp, result)
+
+
+def _template_live_take(side: dict[str, Any], opp: dict[str, Any], result: dict[str, Any], live: dict[str, Any]) -> dict[str, str]:
+    proj = result["projection"]
+    rating = result["gaffer_rating"]
+    f, a = live["final_score"]["for"], live["final_score"]["against"]
+    outcome = "won" if f > a else "lost" if f < a else "drew"
+    lucky = (f - a) - (proj["xg_for"] - proj["xg_against"])
+    if rating >= 7:
+        headline = f"{side['name']} managed it well" if outcome != "lost" else "Right calls, cruel result"
+    elif rating >= 5.5:
+        headline = "Steady hands on the touchline"
+    elif outcome == "won":
+        headline = "Got away with it"
+    else:
+        headline = f"{opp['name']} were invited on"
+
+    opening = (
+        f"{side['name']} {outcome} {f}-{a}. Over the last {proj['minutes']} minutes your set-ups "
+        f"created {proj['xg_for']:.2f} xG and allowed {proj['xg_against']:.2f}, against "
+        f"{proj['baseline_xg_for']:.2f} and {proj['baseline_xg_against']:.2f} if nothing had changed."
+    )
+    lines = [opening]
+    if lucky >= 0.8:
+        lines.append("The scoreline flatters you; the chances were closer than that.")
+    elif lucky <= -0.8:
+        lines.append("The finishing let you down more than the plan did.")
+    changes = live.get("changes") or []
+    if changes:
+        lines.append(f"You changed things {len(changes)} time{'s' if len(changes) != 1 else ''}, the last on {changes[-1]['minute']} minutes.")
+    bads = [x["text"] for x in result["findings"] if x["tone"] == "bad"]
+    if bads:
+        worry = bads[0].removeprefix("Biggest gap: ")
+        lines.append(f"The worry by the end: {worry[0].lower()}{worry[1:]}")
+    return {"headline": headline, "take": " ".join(lines), "source": "model"}
 
 
 def _template_take(side: dict[str, Any], opp: dict[str, Any], result: dict[str, Any]) -> dict[str, str]:

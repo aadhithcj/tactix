@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import get_db
 from app.schemas import (
+    LiveSummary,
+    ReportRequest,
     ScenarioDetail,
     ScenarioSide,
     ScenarioSummary,
@@ -16,7 +18,13 @@ from app.schemas import (
 from app.services.limits import ai_allowed
 from app.services.moments import CUSTOM_PREFIX
 from app.services.pundit import pundit_take, read_plan
-from app.services.simulation import PRESETS, evaluate, suggest_shape
+from app.services.simulation import (
+    PRESETS,
+    evaluate,
+    match_rating,
+    rating_label,
+    suggest_shape,
+)
 
 router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
 
@@ -26,6 +34,11 @@ MODEL_NOTE = (
     "Projections scale each side's real chance rate from this match by how your shape and "
     "plan change coverage, line height, marking and bodies forward. They are model "
     "estimates of expected goals, not predictions of the result."
+)
+LIVE_NOTE = (
+    "The match was played out from the same model: expected goals scaled by each set-up you "
+    "used, with shots coming from the ground your shape left open. The goals are one roll of "
+    "the dice; the rating judges the chances you allowed and created, not the scoreline."
 )
 
 
@@ -104,7 +117,23 @@ def _bad_request(detail: str) -> HTTPException:
 
 @router.post("/{slug}/simulate", response_model=SimulationResponse)
 def simulate(slug: str, body: SimulationRequest, db: DbSession, request: Request) -> SimulationResponse:
-    scenario = _get_scenario(db, slug)
+    return _judge(_get_scenario(db, slug), body, request)
+
+
+@router.post("/{slug}/report", response_model=SimulationResponse)
+def report(slug: str, body: ReportRequest, db: DbSession, request: Request) -> SimulationResponse:
+    """Verdict on a live match played out in the browser: the rating covers the
+    whole match (every tactical change), the metrics describe the final set-up."""
+    return _judge(_get_scenario(db, slug), body, request, live=body.live)
+
+
+def _judge(
+    scenario: models.Scenario,
+    body: SimulationRequest,
+    request: Request,
+    live: LiveSummary | None = None,
+) -> SimulationResponse:
+    slug = scenario.slug
     snap = scenario.snapshot
     side = snap["sides"].get(str(body.team_id))
     if not side:
@@ -134,6 +163,14 @@ def simulate(slug: str, body: SimulationRequest, db: DbSession, request: Request
             raise _bad_request(f"Player {p.player_id} is not on the pitch")
         placements[p.player_id] = (p.x, p.y)
 
+    goals_for = snap["score"]["home" if side["is_home"] else "away"]
+    goals_against = snap["score"]["away" if side["is_home"] else "home"]
+    if live:
+        if (live.start_score.for_, live.start_score.against) != (goals_for, goals_against):
+            raise _bad_request("The live match must start from the real score")
+        if live.final_score.for_ < goals_for or live.final_score.against < goals_against:
+            raise _bad_request("The final score can't be lower than the starting score")
+
     plan = (body.custom_plan or "").strip() or None
     # Over their allowance, a visitor still gets a verdict, written by the model alone.
     use_ai = ai_allowed(request)
@@ -143,7 +180,27 @@ def simulate(slug: str, body: SimulationRequest, db: DbSession, request: Request
         profile, plan_source = PRESETS[body.tactic], "preset"
 
     result = evaluate(snap, body.team_id, placements, subs, profile, body.tactic)
-    pundit = pundit_take(snap, result, plan, use_ai=use_ai)
+    if live:
+        # The whole match counts, not just the set-up it ended with.
+        rating = match_rating(
+            goals_for - goals_against, live.xg_for, live.xg_against, live.base_xg_for, live.base_xg_against, live.fit
+        )
+        final_home, final_away = (
+            (live.final_score.for_, live.final_score.against)
+            if side["is_home"]
+            else (live.final_score.against, live.final_score.for_)
+        )
+        result["gaffer_rating"] = rating
+        result["rating_label"] = rating_label(rating)
+        result["projection"] = {
+            "minutes": live.minutes,
+            "xg_for": round(live.xg_for, 2),
+            "xg_against": round(live.xg_against, 2),
+            "baseline_xg_for": round(live.base_xg_for, 2),
+            "baseline_xg_against": round(live.base_xg_against, 2),
+            "likely_score": {"home": final_home, "away": final_away},
+        }
+    pundit = pundit_take(snap, result, plan, use_ai=use_ai, live=live.model_dump(by_alias=True) if live else None)
 
     actual = snap["actual"]
     return SimulationResponse(
@@ -155,6 +212,7 @@ def simulate(slug: str, body: SimulationRequest, db: DbSession, request: Request
             "xg_for_after": side["actual_after"]["xg_for"],
             "xg_against_after": side["actual_after"]["xg_against"],
         },
-        model_note=MODEL_NOTE,
+        model_note=LIVE_NOTE if live else MODEL_NOTE,
+        live=live,
         **result,
     )

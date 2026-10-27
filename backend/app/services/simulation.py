@@ -249,6 +249,29 @@ def suggest_shape(
     return [{"player_id": pid, "x": round(x, 1), "y": round(y, 1)} for pid, (x, y) in moved.items()]
 
 
+def match_rating(
+    lead: int, xg_for: float, xg_against: float, base_for: float, base_against: float, fit: float
+) -> float:
+    """Gaffer Rating: did the decisions move the expected goals the right way
+    for the game state? Used for one set-up and for a whole live match
+    (totals across every tactical change)."""
+    if lead >= 2:
+        w_for, w_against = 0.35, 1.6
+    elif lead == 1:
+        w_for, w_against = 0.6, 1.4
+    elif lead == 0:
+        w_for, w_against = 1.0, 1.0
+    elif lead == -1:
+        w_for, w_against = 1.4, 0.7
+    else:
+        w_for, w_against = 1.7, 0.4
+    utility = w_for * (xg_for - base_for) - w_against * (xg_against - base_against)
+    scale = max(0.25, base_for + base_against)
+    raw = 6.0 * (utility / scale) + 2.2 * (fit - 0.55)
+    # Soft ceiling: a 10 should be rare, and so should a 1.
+    return round(_clamp(5.8 + 4.2 * math.tanh(raw / 4.0), 1.0, 10.0), 1)
+
+
 def _poisson_mode(lam: float) -> int:
     return math.floor(lam)
 
@@ -334,22 +357,7 @@ def evaluate(
     proj_for = base_for * for_mult
     proj_against = base_against * against
 
-    # ---- rating: did the decision move the game state the right way?
-    if lead >= 2:
-        w_for, w_against = 0.35, 1.6
-    elif lead == 1:
-        w_for, w_against = 0.6, 1.4
-    elif lead == 0:
-        w_for, w_against = 1.0, 1.0
-    elif lead == -1:
-        w_for, w_against = 1.4, 0.7
-    else:
-        w_for, w_against = 1.7, 0.4
-    utility = w_for * (proj_for - base_for) - w_against * (proj_against - base_against)
-    scale = max(0.25, base_for + base_against)
-    raw = 6.0 * (utility / scale) + 2.2 * (fit - 0.55)
-    # Soft ceiling: a 10 should be rare, and so should a 1.
-    rating = round(_clamp(5.8 + 4.2 * math.tanh(raw / 4.0), 1.0, 10.0), 1)
+    rating = match_rating(lead, proj_for, proj_against, base_for, base_against, fit)
 
     final_for = goals_for + _poisson_mode(proj_for)
     final_against = goals_against + _poisson_mode(proj_against)

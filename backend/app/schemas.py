@@ -116,6 +116,47 @@ class SimulationRequest(BaseModel):
     substitutions: list[SubstitutionIn] = Field(default_factory=list, max_length=5)
 
 
+class LiveScore(BaseModel):
+    for_: int = Field(alias="for", ge=0, le=30)
+    against: int = Field(ge=0, le=30)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class LiveGoal(BaseModel):
+    minute: int = Field(ge=0, le=130)
+    team: Literal["you", "them"]
+    player: str = Field(max_length=80)
+
+
+class LiveChange(BaseModel):
+    minute: int = Field(ge=0, le=130)
+    label: str = Field(max_length=160)
+
+
+class LiveSummary(BaseModel):
+    """What the browser's live match produced: totals across every tactical change."""
+
+    start_score: LiveScore
+    final_score: LiveScore
+    xg_for: float = Field(ge=0, le=15)
+    xg_against: float = Field(ge=0, le=15)
+    base_xg_for: float = Field(ge=0, le=15)
+    base_xg_against: float = Field(ge=0, le=15)
+    fit: float = Field(ge=0, le=1)
+    minutes: int = Field(ge=0, le=130)
+    shots_for: int = Field(ge=0, le=100)
+    shots_against: int = Field(ge=0, le=100)
+    goals: list[LiveGoal] = Field(default_factory=list, max_length=30)
+    changes: list[LiveChange] = Field(default_factory=list, max_length=30)
+
+
+class ReportRequest(SimulationRequest):
+    """The final set-up of a live match, plus how the match went."""
+
+    live: LiveSummary
+
+
 class Projection(BaseModel):
     minutes: int
     xg_for: float
@@ -173,6 +214,7 @@ class SimulationResponse(BaseModel):
     pundit: PunditRead
     actual: dict[str, Any]
     model_note: str
+    live: LiveSummary | None = None
 
 
 class AskRequest(BaseModel):
