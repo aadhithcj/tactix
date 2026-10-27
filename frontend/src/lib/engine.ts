@@ -12,7 +12,8 @@
  * Everything is in the user's frame: their goal at x=0, attacking towards x=120.
  */
 import { baselineRate, PITCH_X, PITCH_Y, setupRates, threatCoverage, type Setup } from './model'
-import type { LiveSummary, ScenarioDetail, Side, SnapshotPlayer } from './types'
+import { shortName } from './names'
+import type { LiveSummary, Role, ScenarioDetail, Side, SnapshotPlayer, TacticKey } from './types'
 
 export type Team = 'you' | 'them'
 
@@ -34,13 +35,31 @@ export const evaluationModel: ChanceModel = ({ side, observedMinutes, lead, forM
 export interface LiveEvent {
   /** Match clock, in seconds. */
   t: number
-  kind: 'kickoff' | 'play' | 'shot' | 'goal' | 'change' | 'fulltime'
+  kind: 'kickoff' | 'play' | 'card' | 'shot' | 'goal' | 'change' | 'decision' | 'fulltime'
   team: Team | null
   text: string
   xg?: number
   player?: string
   /** Where a shot was taken. */
   at?: { x: number; y: number }
+}
+
+/** One answer to a touchline call. No tactic and no sub means "hold your nerve". */
+export interface CallOption {
+  key: string
+  label: string
+  hint: string
+  tactic?: Exclude<TacticKey, 'custom'>
+  sub?: { off_id: number; on_id: number }
+}
+
+/** A moment in the match that asks the manager for a decision. The clock waits. */
+export interface Call {
+  t: number
+  kind: 'threat' | 'conceded' | 'scored' | 'booking' | 'legs' | 'late'
+  title: string
+  body: string
+  options: CallOption[]
 }
 
 interface Waypoint {
@@ -118,6 +137,9 @@ function shotSpots(players: SnapshotPlayer[], grid: number[][]): { spots: Spot[]
 }
 
 const ROLE_SHOT: Record<string, number> = { GK: 0, DEF: 0.4, MID: 1.4, FWD: 3 }
+/** Touchline calls: at most this many a match, this far apart (goals excepted). */
+const MAX_CALLS = 4
+const CALL_GAP = 6 * 60
 const SECONDS_PER_MINUTE = 60
 
 export class LiveEngine {
@@ -143,6 +165,13 @@ export class LiveEngine {
   private shots = { you: 0, them: 0 }
   private goals: LiveSummary['goals'] = []
   private restartAt: { team: Team; x: number; y: number } | null = null
+  /** A call waiting for an answer; the clock doesn't move until it gets one. */
+  pending: Call | null = null
+  private calls: Call['kind'][] = []
+  private lastCall = -Infinity
+  private oppShots: number[] = []
+  private booked: { id: number; name: string } | null = null
+  private bookingAt: number
 
   private detail: ScenarioDetail
   readonly teamId: number
@@ -169,6 +198,8 @@ export class LiveEngine {
     this.startScore = { ...this.score }
     this.rng = mulberry32(seed)
     this.setup = setup
+    // About half of matches see one of your players booked, somewhere in the middle of what's left.
+    this.bookingAt = this.rng() < 0.55 ? lerp(this.start + 300, this.end - 600, this.rng()) : Infinity
     this.refreshRates(true)
     this.events.push({ t: this.t, kind: 'kickoff', team: null, text: `Play resumes. ${this.side.name} ${f}–${a} ${this.opp.name}.` })
   }
@@ -218,15 +249,20 @@ export class LiveEngine {
       observedMinutes: this.detail.snapshot.minute,
       lead: this.lead,
       forMult: this.rates.forMult,
-      against: this.rates.against,
+      // A booked player can't fly into tackles.
+      against: this.rates.against * (this.booked && this.onPitch(this.booked.id) ? 1.06 : 1),
     })
+  }
+
+  private onPitch(id: number) {
+    return this.rates.players.some((p) => p.id === id)
   }
 
   /** Run the clock forward by `seconds` of match time; returns the new events. */
   advance(seconds: number): LiveEvent[] {
     const from = this.events.length
     const target = Math.min(this.end, this.t + seconds)
-    while (this.t < target) {
+    while (this.t < target && !this.pending) {
       if (!this.phase) this.phase = this.nextPhase()
       const nextMinute = (this.minute + 1) * SECONDS_PER_MINUTE
       const step = Math.min(target, this.phase.end, nextMinute) - this.t
@@ -234,6 +270,7 @@ export class LiveEngine {
       this.t += step
       if (this.t >= this.phase.end) this.resolve(this.phase)
       this.refreshRates()
+      if (!this.pending) this.minuteCalls()
     }
     if (this.done && !this.events.some((e) => e.kind === 'fulltime'))
       this.events.push({
@@ -245,8 +282,189 @@ export class LiveEngine {
     return this.events.slice(from)
   }
 
+  /** Skipping ahead: every call left gets the default answer, holding your nerve. */
   runToEnd() {
-    return this.advance(this.end - this.t)
+    const out: LiveEvent[] = []
+    while (!this.done) {
+      out.push(...this.advance(this.end - this.t))
+      if (this.pending) this.answer(this.pending.options.find((o) => !o.tactic && !o.sub)!.key)
+    }
+    return out
+  }
+
+  /** Answer the pending call. Changes to the set-up come back through setSetup. */
+  answer(key: string): CallOption | null {
+    const call = this.pending
+    if (!call) return null
+    const option = call.options.find((o) => o.key === key) ?? call.options[call.options.length - 1]
+    this.pending = null
+    if (!option.tactic && !option.sub) this.events.push({ t: this.t, kind: 'decision', team: 'you', text: `${option.label}.` })
+    return option
+  }
+
+  // ---------------------------------------------------------------- calls
+  private ask(call: Omit<Call, 't'>, urgent = false) {
+    if (this.pending || this.done || this.calls.length >= MAX_CALLS) return
+    // A call with only one answer isn't a decision.
+    if (call.options.length < 2) return
+    if (!urgent && this.t - this.lastCall < CALL_GAP) return
+    if (this.calls.includes(call.kind) && call.kind !== 'conceded') return
+    // Nothing left to decide in the last minute.
+    if (this.end - this.t < 60) return
+    this.calls.push(call.kind)
+    this.lastCall = this.t
+    this.pending = { ...call, t: this.t }
+  }
+
+  private subsLeft() {
+    return this.side.subs_allowed - this.side.subs_used - this.setup.substitutions.length
+  }
+
+  /** A substitution worth offering: someone in `offRoles` off, the best fit from the bench on. */
+  private subOption(offRoles: Role[], onRoles: Role[], off?: SnapshotPlayer): CallOption | null {
+    if (this.subsLeft() <= 0) return null
+    const used = new Set(this.setup.substitutions.map((s) => s.on_id))
+    const bench = this.side.bench.filter((b) => !used.has(b.id))
+    const incoming = bench.find((b) => b.role && onRoles.includes(b.role)) ?? bench.find((b) => b.role !== 'GK')
+    // Take off the most advanced player in those roles: usually the one doing the running.
+    const outgoing =
+      off ?? [...this.rates.players].filter((p) => offRoles.includes(p.role)).sort((a, b) => b.x - a.x)[0]
+    if (!incoming || !outgoing) return null
+    return {
+      key: 'sub',
+      label: `${shortName(incoming.name)} on for ${shortName(outgoing.name)}`,
+      hint: incoming.position ? `Fresh legs at ${incoming.position.toLowerCase()}.` : 'Fresh legs.',
+      sub: { off_id: outgoing.id, on_id: incoming.id },
+    }
+  }
+
+  private tacticOption(tactic: Exclude<TacticKey, 'custom'>, label: string, hint: string): CallOption | null {
+    return this.setup.tactic === tactic ? null : { key: tactic, label, hint, tactic }
+  }
+
+  private hold(label = 'Hold your nerve', hint = 'Trust the plan you have.'): CallOption {
+    return { key: 'hold', label, hint }
+  }
+
+  private options(...opts: (CallOption | null)[]) {
+    return opts.filter((o): o is CallOption => o !== null)
+  }
+
+  private afterShot(team: Team, scored: boolean) {
+    const minsLeft = Math.round((this.end - this.t) / 60)
+    const key = this.side.key_threat
+    if (scored && team === 'them') {
+      const lead = this.lead
+      this.ask(
+        lead > 0
+          ? {
+              kind: 'conceded',
+              title: `${this.opp.name} are back in it`,
+              body: `Still ${this.score.for}–${this.score.against} to you, ${minsLeft} minutes to hold on.`,
+              options: this.options(
+                this.tacticOption('park_bus', 'Shut up shop', 'Everyone behind the ball. You will see less of it.'),
+                this.subOption(['FWD', 'MID'], ['DEF', 'MID']),
+                this.hold('Stay calm', 'Change nothing. One goal is still a lead.'),
+              ),
+            }
+          : {
+              kind: 'conceded',
+              title: lead === 0 ? 'Your lead is gone' : `${this.opp.name} are ahead`,
+              body: `${this.score.for}–${this.score.against}, ${minsLeft} minutes left. The dugout is looking at you.`,
+              options: this.options(
+                this.tacticOption('high_press', 'Go for it', 'Push up and hunt the ball. More chances both ways.'),
+                this.subOption(['DEF', 'MID'], ['FWD']),
+                this.hold('Stay patient', 'There is time. Keep the shape.'),
+              ),
+            },
+        true,
+      )
+      return
+    }
+    if (scored && team === 'you' && this.lead >= 1 && minsLeft >= 6) {
+      this.ask(
+        {
+          kind: 'scored',
+          title: this.lead === 1 ? 'You are in front' : 'Breathing room',
+          body: `${this.score.for}–${this.score.against} with ${minsLeft} minutes to go. Protect it or go for more?`,
+          options: this.options(
+            this.tacticOption('park_bus', 'Protect it', 'Drop deep and make them break you down.'),
+            this.tacticOption('high_press', 'Go for the kill', 'Another goal ends it. So could a counter.'),
+            this.hold('Keep doing what works'),
+          ),
+        },
+        true,
+      )
+      return
+    }
+    if (team === 'them') {
+      this.oppShots.push(this.t)
+      const recent = this.oppShots.filter((s) => this.t - s <= 10 * 60)
+      if (recent.length >= 2)
+        this.ask({
+          kind: 'threat',
+          title: `${this.opp.name} keep coming`,
+          body: `${recent.length} shots against you in ten minutes.${key && this.onPitchOpp(key.player_id) ? ` ${shortName(key.name)} is at the heart of it.` : ''}`,
+          options: this.options(
+            this.tacticOption('park_bus', 'Drop deeper', 'Fewer clear sights of goal, less of the ball.'),
+            key ? this.tacticOption('mark_threat', `Put a man on ${shortName(key.name)}`, 'Cuts his share. Opens space elsewhere.') : null,
+            this.hold(),
+          ),
+        })
+    }
+  }
+
+  private onPitchOpp(id: number) {
+    return this.oppAnchors.some((p) => p.id === id)
+  }
+
+  /** Calls that come with the clock: a booking, tired legs, the last throw of the dice. */
+  private minuteCalls() {
+    const minsLeft = Math.round((this.end - this.t) / 60)
+    if (!this.booked && this.t >= this.bookingAt) {
+      const candidates = this.rates.players.filter((p) => p.role === 'DEF' || p.role === 'MID')
+      const p = candidates[Math.floor(this.rng() * candidates.length)]
+      if (p) {
+        this.booked = { id: p.id, name: p.name }
+        this.events.push({ t: this.t, kind: 'card', team: 'you', player: p.name, text: `${p.name} goes into the book for a late challenge.` })
+        this.refreshRates(true)
+        this.ask(
+          {
+            kind: 'booking',
+            title: `${shortName(p.name)} is on a yellow`,
+            body: `${minsLeft} minutes left, and he can't fly into a tackle now.`,
+            options: this.options(
+              this.subOption([p.role], [p.role], p),
+              this.hold('Leave him on', 'He knows the job. He will have to stay on his feet.'),
+            ),
+          },
+          true,
+        )
+        return
+      }
+    }
+    if (this.rates.profile.press >= 0.6 && this.minute >= 78)
+      this.ask({
+        kind: 'legs',
+        title: 'The press is running out of legs',
+        body: 'Your front players are arriving a second late. The gaps behind them are growing.',
+        options: this.options(
+          this.tacticOption('mark_threat', 'Drop off a little', 'Stop chasing. Pick up their danger man instead.'),
+          this.subOption(['MID', 'FWD'], ['MID', 'FWD']),
+          this.hold('Keep pressing', 'Make them suffer for the last few minutes.'),
+        ),
+      })
+    if (this.lead <= 0 && minsLeft <= 7)
+      this.ask({
+        kind: 'late',
+        title: 'Last roll of the dice',
+        body: `${this.score.for}–${this.score.against} and ${minsLeft} minutes left.`,
+        options: this.options(
+          this.tacticOption('high_press', 'Everyone forward', 'Throw bodies at it and hope.'),
+          this.subOption(['DEF', 'MID'], ['FWD']),
+          this.hold(this.lead === 0 ? 'Take the draw' : 'Keep the shape', 'No heroics.'),
+        ),
+      })
   }
 
   private accumulate(seconds: number) {
@@ -352,6 +570,7 @@ export class LiveEngine {
       this.events.push({ t: this.t, kind: 'goal', team, xg, player: shooter, at: { x, y }, text: `GOAL! ${shooter} scores ${where}. ${name} ${team === 'you' ? this.score.for : this.score.against}, ${team === 'you' ? this.opp.name : this.side.name} ${team === 'you' ? this.score.against : this.score.for}.` })
       this.refreshRates(true)
       this.restartAt = { team: team === 'you' ? 'them' : 'you', x: PITCH_X / 2, y: PITCH_Y / 2 }
+      this.afterShot(team, true)
       return
     }
     const r = rng()
@@ -360,6 +579,7 @@ export class LiveEngine {
     this.events.push({ t: this.t, kind: 'shot', team, xg, player: shooter, at: { x, y }, text: `${big}${shooter} shoots ${where} and ${result}.` })
     // The keeper restarts.
     this.restartAt = { team: team === 'you' ? 'them' : 'you', x: team === 'you' ? PITCH_X - 8 : 8, y: PITCH_Y / 2 }
+    this.afterShot(team, false)
   }
 
   private shooter(team: Team, x: number, y: number) {

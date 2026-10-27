@@ -73,3 +73,49 @@ describe('live engine', () => {
     }
   })
 })
+
+describe('touchline calls', () => {
+  it('stops the clock for a call and resumes after an answer', () => {
+    let seen = 0
+    for (let seed = 1; seed <= 40; seed++) {
+      const e = new LiveEngine(detail, ARG, park, seed)
+      while (!e.done) {
+        e.advance(30)
+        if (e.pending) {
+          seen++
+          const t = e.t
+          e.advance(60)
+          expect(e.t).toBe(t)
+          expect(e.pending.options.length).toBeGreaterThanOrEqual(2)
+          expect(e.pending.options.some((o) => !o.tactic && !o.sub)).toBe(true)
+          e.answer('hold')
+        }
+      }
+      expect(e.summary().minutes).toBe(detail.snapshot.horizon_minutes)
+    }
+    expect(seen).toBeGreaterThan(10)
+  })
+
+  it('offers subs that are really available', () => {
+    const side = detail.snapshot.sides[String(ARG)]
+    for (let seed = 1; seed <= 40; seed++) {
+      const e = new LiveEngine(detail, ARG, park, seed)
+      while (!e.done) {
+        e.advance(30)
+        const sub = e.pending?.options.find((o) => o.sub)?.sub
+        if (sub) {
+          expect(e.players.some((p) => p.id === sub.off_id)).toBe(true)
+          expect(side.bench.some((b) => b.id === sub.on_id)).toBe(true)
+        }
+        if (e.pending) e.answer('hold')
+      }
+    }
+  })
+
+  it('skipping answers every call and still finishes', () => {
+    const e = new LiveEngine(detail, ARG, park, 4)
+    e.runToEnd()
+    expect(e.done).toBe(true)
+    expect(e.pending).toBeNull()
+  })
+})

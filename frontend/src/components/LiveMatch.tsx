@@ -1,6 +1,6 @@
 import { FastForward, Pause, Play } from 'lucide-react'
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
-import type { LiveEngine, LiveEvent } from '../lib/engine'
+import type { Call, CallOption, LiveEngine, LiveEvent } from '../lib/engine'
 import { PITCH_X, PITCH_Y } from '../lib/model'
 import type { ScenarioDetail } from '../lib/types'
 import { usePrefersReducedMotion } from '../lib/usePrefersReducedMotion'
@@ -27,17 +27,20 @@ interface LiveMatchProps {
   onFullTime: () => void
   reporting: boolean
   error: string | null
+  /** A call was answered with a change: the parent updates the board and the engine. */
+  onDecide: (option: CallOption) => void
   /** Kept by the parent so a pause doesn't reset it. */
   speed: Speed
   onSpeed: (s: Speed) => void
 }
 
-export function LiveMatch({ detail, engine, onPause, onFullTime, reporting, error, speed, onSpeed }: LiveMatchProps) {
+export function LiveMatch({ detail, engine, onPause, onFullTime, reporting, error, speed, onSpeed, onDecide }: LiveMatchProps) {
   const snap = detail.snapshot
   const side = snap.sides[String(engine.teamId)]
   const opp = Object.values(snap.sides).find((s) => s.team_id !== engine.teamId)!
   const reduce = usePrefersReducedMotion()
-  const [running, setRunning] = useState(() => !reduce && !engine.done)
+  const [call, setCall] = useState<Call | null>(engine.pending)
+  const [running, setRunning] = useState(() => !reduce && !engine.done && !engine.pending)
   const [events, setEvents] = useState<LiveEvent[]>(() => [...engine.events])
   const [flash, setFlash] = useState<LiveEvent | null>(null)
   // Re-render once a match minute for the chance bar; the clock and players move without React.
@@ -45,6 +48,7 @@ export function LiveMatch({ detail, engine, onPause, onFullTime, reporting, erro
   const clockRef = useRef<HTMLSpanElement>(null)
   const pitch = useRef<LivePitchHandle>(null)
   const hold = useRef(0)
+  const logged = useRef(engine.events.length)
   const finished = useRef(engine.done)
 
   const fullTime = () => {
@@ -55,8 +59,12 @@ export function LiveMatch({ detail, engine, onPause, onFullTime, reporting, erro
   }
 
   const take = (fresh: LiveEvent[]) => {
+    // Changes made from the board are logged outside advance(), so follow the log itself.
+    if (engine.events.length !== logged.current) {
+      logged.current = engine.events.length
+      setEvents([...engine.events])
+    }
     if (!fresh.length) return
-    setEvents([...engine.events])
     const goal = fresh.findLast((e) => e.kind === 'goal')
     if (goal) {
       setFlash(goal)
@@ -85,6 +93,12 @@ export function LiveMatch({ detail, engine, onPause, onFullTime, reporting, erro
       if (now >= hold.current) take(engine.advance(dt * rate))
       setMinute(engine.minute)
       draw()
+      if (engine.pending) {
+        // The clock waits for the manager.
+        setCall(engine.pending)
+        setRunning(false)
+        return
+      }
       if (engine.done) {
         fullTime()
         return
@@ -97,7 +111,16 @@ export function LiveMatch({ detail, engine, onPause, onFullTime, reporting, erro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, speed])
 
+  const answer = (option: CallOption) => {
+    engine.answer(option.key)
+    if (option.tactic || option.sub) onDecide(option)
+    setEvents([...engine.events])
+    setCall(null)
+    setRunning(true)
+  }
+
   const skip = () => {
+    setCall(null)
     setRunning(false)
     hold.current = 0
     take(engine.runToEnd())
@@ -162,6 +185,7 @@ export function LiveMatch({ detail, engine, onPause, onFullTime, reporting, erro
                 </p>
               </div>
             )}
+            {call && !done && <CallCard call={call} onAnswer={answer} />}
             {done && (
               <div className="absolute inset-0 grid place-items-center bg-ink/55">
                 <div className="panel max-w-[30ch] p-5 text-center">
@@ -197,7 +221,7 @@ export function LiveMatch({ detail, engine, onPause, onFullTime, reporting, erro
             On the touchline
           </h2>
           <p className="mt-1 text-ink-soft">Not working? Stop the clock and change it.</p>
-          <button type="button" onClick={onPause} disabled={done} className="btn btn-primary lift mt-4 w-full text-lg">
+          <button type="button" onClick={onPause} disabled={done || Boolean(call)} className="btn btn-primary lift mt-4 w-full text-lg">
             <Pause size={18} strokeWidth={2.75} aria-hidden="true" />
             Pause and change tactics
           </button>
@@ -205,7 +229,7 @@ export function LiveMatch({ detail, engine, onPause, onFullTime, reporting, erro
             <button
               type="button"
               onClick={() => setRunning((r) => !r)}
-              disabled={done}
+              disabled={done || Boolean(call)}
               aria-label={running ? 'Pause the clock' : 'Play'}
               className="grid size-11 shrink-0 place-items-center rounded-full border-2 border-ink bg-paper enabled:hover:bg-yellow disabled:opacity-40"
             >
@@ -238,6 +262,52 @@ export function LiveMatch({ detail, engine, onPause, onFullTime, reporting, erro
   )
 }
 
+/** A note from the bench: the clock is stopped until you answer. */
+function CallCard({ call, onAnswer }: { call: Call; onAnswer: (o: CallOption) => void }) {
+  const first = useRef<HTMLButtonElement>(null)
+  useEffect(() => first.current?.focus({ preventScroll: true }), [call])
+  return (
+    <div className="absolute inset-0 grid place-items-center bg-ink/45 p-3">
+      <section
+        role="alertdialog"
+        aria-labelledby="call-title"
+        aria-describedby="call-body"
+        className="tx-pop w-full max-w-[420px] overflow-hidden rounded-[14px] border-[3px] border-ink bg-paper shadow-[6px_6px_0_var(--color-ink)]"
+      >
+        <p className="flex items-center justify-between border-b-2 border-ink bg-yellow px-4 py-1.5">
+          <span className="score-narrow text-sm tracking-wide">YOUR CALL</span>
+          <span className="score-narrow text-sm tabular-nums">{minuteOf(call.t)}</span>
+        </p>
+        <div className="px-4 pb-4 pt-3">
+          <h2 id="call-title" className="text-2xl font-[850] leading-tight">
+            {call.title}
+          </h2>
+          <p id="call-body" className="mt-1 text-ink-soft">
+            {call.body}
+          </p>
+          <div className="mt-3 grid gap-2">
+            {call.options.map((o, i) => {
+              const hold = !o.tactic && !o.sub
+              return (
+                <button
+                  key={o.key}
+                  ref={i === 0 ? first : undefined}
+                  type="button"
+                  onClick={() => onAnswer(o)}
+                  className={`lift rounded-[10px] border-2 border-ink px-3 py-2 text-left ${hold ? 'bg-cream hover:bg-cream-deep' : 'bg-paper hover:bg-yellow'}`}
+                >
+                  <span className="block font-[800] leading-tight">{o.label}</span>
+                  <span className="block text-sm leading-snug text-ink-soft">{o.hint}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function TeamChip({ name, code, kit }: { name: string; code: string; kit: 'you' | 'them' }) {
   return (
     <span
@@ -261,11 +331,12 @@ function Feed({ events }: { events: LiveEvent[] }) {
         {shown.map((e, i) => (
           <li
             key={`${e.t}-${i}-${e.kind}`}
-            className={`flex gap-3 px-4 py-2.5 text-sm sm:px-5 ${e.kind === 'goal' ? 'bg-yellow font-[750]' : e.kind === 'change' ? 'bg-ink text-cream' : e.kind === 'play' ? 'bg-paper text-ink-soft' : 'bg-paper'}`}
+            className={`flex gap-3 px-4 py-2.5 text-sm sm:px-5 ${e.kind === 'goal' ? 'bg-yellow font-[750]' : e.kind === 'change' || e.kind === 'decision' ? 'bg-ink text-cream' : e.kind === 'play' ? 'bg-paper text-ink-soft' : 'bg-paper'}`}
           >
             <span className="score-narrow w-8 shrink-0 tabular-nums">{minuteOf(e.t)}</span>
             <span className="leading-snug">
-              {e.kind === 'change' && <span className="font-[800]">Your change: </span>}
+              {(e.kind === 'change' || e.kind === 'decision') && <span className="font-[800]">Your call: </span>}
+              {e.kind === 'card' && <span className="mr-1.5 inline-block h-3.5 w-2.5 translate-y-0.5 rounded-[2px] border border-ink bg-yellow" aria-label="Yellow card" />}
               {e.text}
               {e.xg !== undefined && <span className={`ml-1 tabular-nums ${e.kind === 'goal' ? '' : 'text-ink-soft'}`}>({e.xg.toFixed(2)} xG)</span>}
             </span>

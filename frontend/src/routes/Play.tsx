@@ -8,7 +8,7 @@ import { mirror, Pitch, toTokens, ZONE_H, ZONE_W } from '../components/Pitch'
 import { TACTICS, TacticGlyph } from '../components/TacticGlyph'
 import { Verdict } from '../components/Verdict'
 import { api } from '../lib/api'
-import { LiveEngine } from '../lib/engine'
+import { LiveEngine, type CallOption } from '../lib/engine'
 import type { Setup } from '../lib/model'
 import type { ScenarioDetail, SimulationResult, TacticKey } from '../lib/types'
 import { kitFor, kitVars } from '../lib/kits'
@@ -229,6 +229,26 @@ function Touchline({
     toTop()
   }
 
+  // A call answered mid-match changes the board; once React has applied it,
+  // hand the new set-up to the engine.
+  const decided = useRef<string | null>(null)
+  const decide = (option: CallOption) => {
+    decided.current = option.label
+    if (option.tactic) {
+      setTactic(option.tactic)
+      board.applyShape(option.tactic)
+    }
+    if (option.sub) board.substitute(option.sub.off_id, option.sub.on_id)
+  }
+  useEffect(() => {
+    if (!decided.current || !engine.current) return
+    const label = describeChange(lastSetup.current, current(), board) ?? `${decided.current}.`
+    decided.current = null
+    engine.current.setSetup(setup(), label)
+    board.lockSubs()
+    lastSetup.current = current()
+  })
+
   const report = useMutation({
     mutationFn: () => api.report(detail.slug, { team_id: teamId, ...setup(), live: engine.current!.summary() }),
     onSuccess: (r) => {
@@ -271,6 +291,7 @@ function Touchline({
           error={report.error?.message ?? null}
           speed={speed}
           onSpeed={setSpeed}
+          onDecide={decide}
         />
       </div>
     )
