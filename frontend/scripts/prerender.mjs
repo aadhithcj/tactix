@@ -13,6 +13,12 @@ const dist = path.join(root, 'dist')
 const ssrEntry = path.join(root, 'dist-ssr', 'entry-server.js')
 
 const { render, HERO_POOL } = await import(pathToFileURL(ssrEntry).href)
+
+// middleware.ts keeps its own copy of the pool (no imports at the edge); fail
+// the build if the two drift apart.
+const middleware = fs.readFileSync(path.join(root, 'middleware.ts'), 'utf8')
+const missing = HERO_POOL.filter((slug) => !middleware.includes(`'${slug}'`))
+if (missing.length) throw new Error(`middleware.ts HERO_POOL is missing: ${missing.join(', ')}`)
 const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8')
 const marker = '<div id="root"></div>'
 if (!shell.includes(marker)) throw new Error('index.html has no empty #root to fill')
