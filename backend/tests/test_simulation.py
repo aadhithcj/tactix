@@ -102,7 +102,7 @@ def test_scenario_detail_has_suggested_shapes(scenario_client: TestClient) -> No
     res = scenario_client.get("/api/scenarios/lusail-2022-71")
     assert res.status_code == 200
     shapes = res.json()["suggested_shapes"][str(ARG)]
-    assert set(shapes) == {"park_bus", "high_press", "mark_threat"}
+    assert set(shapes) == set(PRESETS)
     assert len(shapes["park_bus"]) == 11
 
 
@@ -179,3 +179,46 @@ def test_report_must_start_from_the_real_score(scenario_client: TestClient) -> N
 
 def test_live_rating_rewards_fewer_chances_allowed() -> None:
     assert match_rating(1, 0.3, 0.2, 0.3, 0.5, 0.8) > match_rating(1, 0.3, 0.8, 0.3, 0.5, 0.8)
+
+
+def test_new_dials_are_neutral_by_default(snapshot: dict) -> None:
+    from dataclasses import replace
+
+    base = evaluate(snapshot, ARG, {}, [], PRESETS["park_bus"], "park_bus")
+    explicit = replace(PRESETS["park_bus"], width=0.5, direct=0.4)
+    assert evaluate(snapshot, ARG, {}, [], explicit, "park_bus")["projection"] == base["projection"]
+
+
+def test_style_changes_the_chances(snapshot: dict) -> None:
+    side = snapshot["sides"][str(ARG)]
+    proj = {}
+    for key in ("tiki_taka", "counter", "wing_play", "false_nine"):
+        shape = suggest_shape(side["players"], PRESETS[key], side["key_threat"], key)
+        placements = {p["player_id"]: (p["x"], p["y"]) for p in shape}
+        proj[key] = evaluate(snapshot, ARG, placements, [], PRESETS[key], key)["projection"]
+    assert len({(p["xg_for"], p["xg_against"]) for p in proj.values()}) == 4
+
+
+def test_keeping_the_ball_means_fewer_chances_against(snapshot: dict) -> None:
+    from dataclasses import replace
+
+    tiki = PRESETS["tiki_taka"]
+    patient = evaluate(snapshot, ARG, {}, [], tiki, "tiki_taka")["projection"]
+    direct = evaluate(snapshot, ARG, {}, [], replace(tiki, direct=0.9), "tiki_taka")["projection"]
+    assert patient["xg_against"] < direct["xg_against"]
+    # France's line sat high, so going direct creates more.
+    assert direct["xg_for"] > patient["xg_for"]
+
+
+def test_false_nine_drops_the_striker(snapshot: dict) -> None:
+    side = snapshot["sides"][str(ARG)]
+    plain = {p["player_id"]: p for p in suggest_shape(side["players"], PRESETS["false_nine"], None)}
+    nine = {p["player_id"]: p for p in suggest_shape(side["players"], PRESETS["false_nine"], None, "false_nine")}
+    dropped = [pid for pid in nine if nine[pid]["x"] < plain[pid]["x"] - 10]
+    assert len(dropped) == 1
+
+
+def test_keywords_read_style() -> None:
+    assert profile_from_text("play a false 9 and keep the ball").direct < 0.2
+    assert profile_from_text("get it wide and cross").width > 0.8
+    assert profile_from_text("sit in and counter").direct > 0.7

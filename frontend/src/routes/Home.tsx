@@ -44,7 +44,8 @@ export default function Home() {
     ask: 'What’s your plan?',
   }
   const caption = `${snap.hero?.caption ?? snap.match.venue}, ${new Date(snap.match.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`
-  const canLock = tactic !== null && (tactic !== 'custom' || plan.trim().length >= 6)
+  // Your own plan is set on dials on the next screen, so words are optional.
+  const canLock = tactic !== null
   const tacticTitle = (key: TacticKey) => (key === 'mark_threat' ? `Mark ${threatName}` : TACTICS.find((t) => t.key === key)!.title)
 
   const makeTheCall = () => {
@@ -197,7 +198,7 @@ export default function Home() {
               {tactic === 'custom' && (
                 <div className="tx-fade-in col-span-2 row-start-3 mt-3 max-w-[720px]">
                   <label htmlFor="home-plan" className="font-[750]">
-                    Your plan, in a sentence or two
+                    Your plan in a sentence <span className="font-semibold text-ink-soft">(optional: you set the dials next)</span>
                   </label>
                   <textarea
                     id="home-plan"
@@ -230,6 +231,7 @@ export default function Home() {
 
         <MoreMoments />
         <HowItPlays />
+        <HowItsDecided />
         <AnalystBand />
       </main>
       <SiteFooter />
@@ -392,8 +394,8 @@ function HowItPlays() {
   const steps = [
     ['Read the moment', 'A real scoreline, a real minute, and both teams where they actually stood.'],
     ['Take a side', 'Pick who you manage. Every moment works from both dugouts.'],
-    ['Make the call', 'Choose a plan, drag players into place, make substitutions.'],
-    ['Get the verdict', 'A Gaffer Rating, the pundit’s take, and what really happened next.'],
+    ['Make the call', 'Pick a plan, set your shape, then watch it play out live. Stop the clock and change it whenever it isn’t working.'],
+    ['Get the verdict', 'A Gaffer Rating, the pundit’s take, and the real match chalked up beside yours.'],
   ]
   return (
     <section aria-labelledby="how-title" className="border-t-2 border-ink bg-yellow">
@@ -407,6 +409,50 @@ function HowItPlays() {
               <span className="score text-5xl">{i + 1}</span>
               <h3 className="mt-3 text-xl font-[800]">{title}</h3>
               <p className="mt-1 text-body text-ink/80">{text}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  )
+}
+
+/** How the match is decided: honest about what's modelled and what's luck. */
+function HowItsDecided() {
+  const points = [
+    [
+      'Your plan sets the chances.',
+      'Six dials (how deep you defend, how hard you press, whether you mark their danger man, how many you send forward, how wide you attack and how directly) scale both teams’ real chance rates from that match.',
+    ],
+    [
+      'Your shape matters too.',
+      'How much of the ground they really attacked through you cover, how high your line sits, how tight you are on their key man, and whether the shape fits the plan.',
+    ],
+    ['Gaps get punished.', 'Their shots come from the spaces your shape leaves open.'],
+    ['The game state counts.', 'Chasing a game or protecting a lead shifts the rates, and a high press tires after the hour.'],
+    [
+      'Then the dice.',
+      'Whether a shot goes in is a roll against its expected goals. Play the same plan hundreds of times and the goals land on the model’s numbers. The better plan wins more often, not every time.',
+    ],
+  ]
+  return (
+    <section aria-labelledby="decided-title" className="border-t-2 border-ink bg-paper">
+      <div className="mx-auto grid max-w-[1320px] gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+        <div>
+          <h2 id="decided-title" className="max-w-[14ch] text-[clamp(2rem,4.4vw,3.25rem)] font-[850] leading-[1.02]">
+            Not random. Not scripted either.
+          </h2>
+          <p className="mt-4 max-w-[40ch] text-lede font-[600]">
+            Every match is played out by a model built from the real game’s data. Your decisions move the odds. The dice still roll.
+          </p>
+        </div>
+        <ol className="grid">
+          {points.map(([lead, text], i) => (
+            <li key={lead} className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-3 border-t-2 border-ink py-4 last:border-b-2">
+              <span className="score text-2xl">{i + 1}</span>
+              <p className="text-body">
+                <strong className="font-[800]">{lead}</strong> <span className="text-ink/80">{text}</span>
+              </p>
             </li>
           ))}
         </ol>

@@ -1,5 +1,16 @@
 export type Role = 'GK' | 'DEF' | 'MID' | 'FWD'
-export type TacticKey = 'park_bus' | 'high_press' | 'mark_threat' | 'custom'
+export type TacticKey = 'park_bus' | 'high_press' | 'mark_threat' | 'false_nine' | 'counter' | 'tiki_taka' | 'wing_play' | 'custom'
+
+/** A custom plan read into dials, by Gemini on the server or by keywords. */
+export interface PlanDials {
+  depth: number
+  press: number
+  marking: number
+  attack: number
+  width: number
+  direct: number
+  source: 'gemini' | 'model'
+}
 
 export interface SnapshotPlayer {
   id: number
@@ -155,6 +166,8 @@ export interface SimulationRequest {
   custom_plan?: string | null
   placements: ShapePoint[]
   substitutions: { off_id: number; on_id: number }[]
+  /** For a custom plan already read into dials. */
+  dials?: PlanDials | null
 }
 
 /** How a live match went: totals across every set-up the manager used. */
@@ -182,7 +195,7 @@ export interface SimulationResult {
   team_id: number
   opponent_id: number
   tactic: TacticKey
-  profile: { depth: number; press: number; marking: number; attack: number; label: string }
+  profile: { depth: number; press: number; marking: number; attack: number; width?: number; direct?: number; label: string }
   plan_source: 'gemini' | 'model' | 'preset'
   gaffer_rating: number
   rating_label: string

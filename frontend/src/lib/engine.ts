@@ -136,6 +136,17 @@ function shotSpots(players: SnapshotPlayer[], grid: number[][]): { spots: Spot[]
   return { spots, meanXg: spots.reduce((a, s) => a + s.w * s.xg, 0) }
 }
 
+/** Tilt shot locations towards the flanks (width 1) or the middle (width 0). */
+function leanSpots(base: { spots: Spot[] }, width: number) {
+  let spots = base.spots.map((s) => {
+    const wide = Math.min(1, Math.abs(s.y - PITCH_Y / 2) / 20) * 2 - 1
+    return { ...s, w: s.w * Math.max(0.15, 1 + 1.6 * (width - 0.5) * wide) }
+  })
+  const total = spots.reduce((a, s) => a + s.w, 0)
+  spots = spots.map((s) => ({ ...s, w: s.w / total }))
+  return { spots, meanXg: spots.reduce((a, s) => a + s.w * s.xg, 0) }
+}
+
 const ROLE_SHOT: Record<string, number> = { GK: 0, DEF: 0.4, MID: 1.4, FWD: 3 }
 /** Touchline calls: at most this many a match, this far apart (goals excepted). */
 const MAX_CALLS = 4
@@ -161,6 +172,8 @@ export class LiveEngine {
   private perMin = { forPerMin: 0, againstPerMin: 0, baseForPerMin: 0, baseAgainstPerMin: 0 }
   private youSpots!: { spots: Spot[]; meanXg: number }
   private themSpots: { spots: Spot[]; meanXg: number }
+  /** Where your shots come from, leaning wide or central with your plan's width. */
+  private yourAttack!: { spots: Spot[]; meanXg: number }
   private totals = { xgFor: 0, xgAgainst: 0, baseFor: 0, baseAgainst: 0, fit: 0 }
   private shots = { you: 0, them: 0 }
   private goals: LiveSummary['goals'] = []
@@ -243,7 +256,10 @@ export class LiveEngine {
     const shapeChanged = force
     this.rateMinute = minute
     this.rates = setupRates(this.detail, this.teamId, this.setup, minute)
-    if (shapeChanged) this.youSpots = shotSpots(this.rates.players, this.side.threat_grid)
+    if (shapeChanged) {
+      this.youSpots = shotSpots(this.rates.players, this.side.threat_grid)
+      this.yourAttack = leanSpots(this.themSpots, this.rates.profile.width)
+    }
     this.perMin = this.model({
       side: this.side,
       observedMinutes: this.detail.snapshot.minute,
@@ -478,7 +494,8 @@ export class LiveEngine {
 
   private possessionShare() {
     const p = this.rates.profile
-    return clamp(0.5 + 0.2 * (p.attack - 0.45) + 0.15 * (p.press - 0.45) - 0.04 * this.lead, 0.3, 0.7)
+    // Patient sides keep the ball; direct ones give it back sooner.
+    return clamp(0.5 + 0.2 * (p.attack - 0.45) + 0.15 * (p.press - 0.45) + 0.15 * (0.4 - p.direct) - 0.04 * this.lead, 0.3, 0.72)
   }
 
   private nextPhase(): Phase {
@@ -487,12 +504,13 @@ export class LiveEngine {
     const restart = this.restartAt
     this.restartAt = null
     const team: Team = restart ? restart.team : rng() < share ? 'you' : 'them'
-    const duration = 8 + rng() * 24
+    // Patient build-ups take longer than direct attacks.
+    const duration = (8 + rng() * 24) * (team === 'you' ? 1 + 0.7 * (0.4 - this.rates.profile.direct) : 1)
     const start = this.t
     const end = Math.min(this.end, start + duration)
     const teamShare = team === 'you' ? share : 1 - share
     const xgPerMin = team === 'you' ? this.perMin.forPerMin : this.perMin.againstPerMin
-    const spots = team === 'you' ? this.themSpots : this.youSpots
+    const spots = team === 'you' ? this.yourAttack : this.youSpots
     // Shots per minute that, at this shape's typical shot quality, add up to the expected goals.
     const pShot = clamp(((xgPerMin / spots.meanXg) * (duration / SECONDS_PER_MINUTE)) / teamShare, 0, 0.9)
     const outcome = end - start >= 6 && rng() < pShot ? 'shot' : 'turnover'

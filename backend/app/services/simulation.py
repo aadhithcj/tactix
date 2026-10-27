@@ -22,13 +22,18 @@ FINAL_THIRD_X = 80.0
 @dataclass(frozen=True)
 class TacticProfile:
     """0..1 dials. depth: how high the block sits; press: pressing intensity;
-    marking: dedication to the key threat; attack: commitment going forward."""
+    marking: dedication to the key threat; attack: commitment going forward;
+    width: through the middle (0) or round the outside (1); direct: patient
+    possession (0) or straight at them (1). Width and directness default to
+    neutral, where they change nothing."""
 
     depth: float
     press: float
     marking: float
     attack: float
     label: str
+    width: float = 0.5
+    direct: float = 0.4
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -36,6 +41,8 @@ class TacticProfile:
             "press": round(self.press, 2),
             "marking": round(self.marking, 2),
             "attack": round(self.attack, 2),
+            "width": round(self.width, 2),
+            "direct": round(self.direct, 2),
             "label": self.label,
         }
 
@@ -44,6 +51,10 @@ PRESETS: dict[str, TacticProfile] = {
     "park_bus": TacticProfile(0.10, 0.15, 0.30, 0.15, "Park the bus"),
     "high_press": TacticProfile(0.85, 0.95, 0.30, 0.65, "High press"),
     "mark_threat": TacticProfile(0.45, 0.45, 1.00, 0.40, "Mark the threat"),
+    "false_nine": TacticProfile(0.55, 0.55, 0.30, 0.50, "False 9", width=0.40, direct=0.20),
+    "counter": TacticProfile(0.20, 0.30, 0.35, 0.35, "Counter-attack", width=0.50, direct=0.90),
+    "tiki_taka": TacticProfile(0.60, 0.60, 0.30, 0.50, "Tiki-taka", width=0.45, direct=0.05),
+    "wing_play": TacticProfile(0.50, 0.45, 0.30, 0.55, "Wing play", width=0.95, direct=0.50),
 }
 NEUTRAL = TacticProfile(0.50, 0.45, 0.30, 0.45, "Custom plan")
 
@@ -52,8 +63,12 @@ _KEYWORDS: tuple[tuple[str, dict[str, float]], ...] = (
     (r"\b(press|squeeze|high line|push (up|high)|aggressive|front foot)\b", {"depth": 0.3, "press": 0.35}),
     (r"\b(mark|man[- ]?mark|shadow|follow|double[- ]?team|tight on)\b", {"marking": 0.5}),
     (r"\b(attack|all out|go for|chase|throw|more bodies|overload|winner|equali[sz]er)\b", {"attack": 0.35, "depth": 0.1}),
-    (r"\b(counter|break|transition|long ball|in behind)\b", {"attack": 0.15, "depth": -0.15}),
-    (r"\b(keep (the )?ball|possession|patient|control|rest defen[cs]e)\b", {"attack": 0.05, "press": 0.05}),
+    (r"\b(counter|break|transition|long ball|in behind)\b", {"attack": 0.15, "depth": -0.15, "direct": 0.35}),
+    (r"\b(keep (the )?ball|possession|patient|control|rest defen[cs]e)\b", {"attack": 0.05, "press": 0.05, "direct": -0.25}),
+    (r"\b(tiki[- ]?taka|short pass(es|ing)?|one[- ]?touch|pass(ing)? it out)\b", {"direct": -0.3}),
+    (r"\b(false (9|nine)|drop(ping)? striker|striker drops)\b", {"direct": -0.2, "width": -0.1}),
+    (r"\b(wide|width|wing(s|ers)?|cross(es|ing)?|flanks?|stretch)\b", {"width": 0.35}),
+    (r"\b(narrow|through the middle|central(ly)?|half[- ]?spaces?)\b", {"width": -0.3}),
     (r"\b(waste time|time[- ]?waste|slow (it|the game) down|manage)\b", {"attack": -0.15, "press": -0.1}),
 )
 
@@ -64,7 +79,14 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
 
 def profile_from_text(plan: str) -> TacticProfile:
     """Keyword reading of a free-text plan; used when no LLM is configured."""
-    dials = {"depth": NEUTRAL.depth, "press": NEUTRAL.press, "marking": NEUTRAL.marking, "attack": NEUTRAL.attack}
+    dials = {
+        "depth": NEUTRAL.depth,
+        "press": NEUTRAL.press,
+        "marking": NEUTRAL.marking,
+        "attack": NEUTRAL.attack,
+        "width": NEUTRAL.width,
+        "direct": NEUTRAL.direct,
+    }
     text = plan.lower()
     for pattern, deltas in _KEYWORDS:
         if re.search(pattern, text):
@@ -216,6 +238,7 @@ def suggest_shape(
     players: list[dict[str, Any]],
     profile: TacticProfile,
     key_threat: dict[str, Any] | None,
+    tactic: str | None = None,
 ) -> list[dict[str, Any]]:
     """Move the real shape towards what a plan needs, as a starting point."""
     out = _outfield(players)
@@ -228,7 +251,7 @@ def suggest_shape(
     target_line = 18 + 32 * profile.depth
     target_length = 30 + 24 * profile.attack
     stretch = target_length / length
-    narrow = 0.8 + 0.25 * profile.attack
+    narrow = 0.8 + 0.25 * profile.attack + 0.5 * (profile.width - 0.5)
 
     moved: dict[int, tuple[float, float]] = {}
     for p in players:
@@ -245,6 +268,24 @@ def suggest_shape(
         marker = min(candidates, key=lambda p: math.hypot(moved[p["id"]][0] - kx, moved[p["id"]][1] - ky))
         # Goal-side and touch-tight.
         moved[marker["id"]] = (_clamp(kx - 3, 6, 112), _clamp(ky, 3, 77))
+
+    attackers = sorted((p for p in out if p.get("role") == "FWD"), key=lambda p: -moved[p["id"]][0])
+    if tactic == "false_nine" and attackers:
+        # The centre-forward drops into the space between their lines.
+        nine = min(attackers[:2], key=lambda p: abs(moved[p["id"]][1] - 40))
+        x, y = moved[nine["id"]]
+        moved[nine["id"]] = (_clamp(x - 16, 50, 100), _clamp(40 + (y - 40) * 0.4, 3, 77))
+    elif tactic == "counter":
+        # One or two stay high to break onto.
+        for p in attackers[:2]:
+            x, y = moved[p["id"]]
+            moved[p["id"]] = (max(x, 72.0), y)
+    elif tactic == "wing_play":
+        # Wide men hug the touchline.
+        for p in out:
+            x, y = moved[p["id"]]
+            if p.get("role") in ("MID", "FWD") and x > 55 and abs(y - 40) > 12:
+                moved[p["id"]] = (x, _clamp(40 + math.copysign(min(37.0, abs(y - 40) * 1.3), y - 40), 3, 77))
 
     return [{"player_id": pid, "x": round(x, 1), "y": round(y, 1)} for pid, (x, y) in moved.items()]
 
@@ -329,8 +370,17 @@ def evaluate(
     against *= math.exp(0.05 * (user_m["bodies_forward"] - base_m["bodies_forward"]))
     against *= 1 + 0.3 * (0.6 - fit)
 
+    # How you attack, against how they defend: counters punish a high line,
+    # width stretches a deep block, and direct play gives the ball back sooner.
+    # All of these are zero for a neutral plan.
+    their_line = shape_metrics(opp["players"], opp)["behind_risk"]
+    against *= 1 + 0.25 * (profile.direct - 0.4)
+    against *= 1 + 0.1 * (profile.width - 0.5)
+
     for_mult = 0.5 + 1.1 * profile.attack
     for_mult *= 1 + 0.15 * (profile.depth - 0.5)
+    for_mult *= 1 + 0.5 * (profile.direct - 0.4) * (their_line - 0.4)
+    for_mult *= 1 + 0.5 * (profile.width - 0.5) * (0.4 - their_line)
     for_mult *= math.exp(0.1 * (user_m["bodies_forward"] - base_m["bodies_forward"]))
     for_mult *= 1 + 0.15 * (fit - 0.6)
 

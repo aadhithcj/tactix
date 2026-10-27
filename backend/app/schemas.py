@@ -105,7 +105,22 @@ class SubstitutionIn(BaseModel):
     on_id: int
 
 
-TacticKey = Literal["park_bus", "high_press", "mark_threat", "custom"]
+TacticKey = Literal[
+    "park_bus", "high_press", "mark_threat", "false_nine", "counter", "tiki_taka", "wing_play", "custom"
+]
+
+
+class PlanDials(BaseModel):
+    """A custom plan as dials, set in the browser's plan builder. With these,
+    nothing reads the plan's words: the dials are the plan."""
+
+    depth: float = Field(ge=0, le=1)
+    press: float = Field(ge=0, le=1)
+    marking: float = Field(ge=0, le=1)
+    attack: float = Field(ge=0, le=1)
+    width: float = Field(default=0.5, ge=0, le=1)
+    direct: float = Field(default=0.4, ge=0, le=1)
+    source: Literal["gemini", "model"] = "model"
 
 
 class SimulationRequest(BaseModel):
@@ -114,6 +129,7 @@ class SimulationRequest(BaseModel):
     custom_plan: str | None = Field(default=None, max_length=600)
     placements: list[Placement] = Field(default_factory=list, max_length=11)
     substitutions: list[SubstitutionIn] = Field(default_factory=list, max_length=5)
+    dials: PlanDials | None = None
 
 
 class LiveScore(BaseModel):

@@ -57,3 +57,4 @@ Thumbs.db
 # Redesign comparison screenshots
 before/
 after/
+.playwright-mcp/

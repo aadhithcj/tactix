@@ -5,7 +5,11 @@ export const TACTICS: { key: TacticKey; title: string; blurb: string }[] = [
   { key: 'park_bus', title: 'Park the bus', blurb: 'Drop deep, stay narrow, protect the goal.' },
   { key: 'high_press', title: 'High press', blurb: 'Push up and hunt the ball in their half.' },
   { key: 'mark_threat', title: 'Mark the threat', blurb: 'Put a man on their most dangerous player.' },
-  { key: 'custom', title: 'Your own plan', blurb: 'Describe it in your words. Set the shape yourself.' },
+  { key: 'counter', title: 'Counter-attack', blurb: 'Sit in, win it, and break fast into the space.' },
+  { key: 'false_nine', title: 'False 9', blurb: 'Your striker drops deep to drag their centre-backs out.' },
+  { key: 'tiki_taka', title: 'Tiki-taka', blurb: 'Keep the ball. Short passes, patience, control.' },
+  { key: 'wing_play', title: 'Wing play', blurb: 'Stretch them wide and get crosses into the box.' },
+  { key: 'custom', title: 'Build your own', blurb: 'Set every dial yourself, then shape the team.' },
 ]
 
 /** Small chalkboard diagram of each plan, drawn in the same frame as the pitch. */
@@ -52,6 +56,47 @@ export function TacticGlyph({ tactic, threat = 'their danger man' }: { tactic: T
           {[you(18, 12, 'x'), you(18, 36, 'y')]}
         </>
       )}
+      {tactic === 'counter' && (
+        <>
+          {[you(14, 14, 'a'), you(14, 34, 'b'), you(20, 24, 'c')]}
+          <g className="tx-glyph-move" style={{ '--gx': '6px' } as CSSProperties}>
+            <path d="M24 24 L56 24 M52 20 L56 24 L52 28" stroke="var(--color-ink)" strokeWidth={1.4} strokeLinecap="round" fill="none" strokeDasharray="3 2" />
+            {you(48, 18, 'f')}
+          </g>
+          {[them(40, 10, 'd'), them(40, 38, 'e')]}
+        </>
+      )}
+      {tactic === 'false_nine' && (
+        <>
+          {[you(52, 8, 'l'), you(52, 40, 'r')]}
+          {[them(60, 18, 'c1'), them(60, 30, 'c2')]}
+          <g className="tx-glyph-move" style={{ '--gx': '-10px' } as CSSProperties}>
+            <path d="M48 24 L38 24 M41 21 L38 24 L41 27" stroke="var(--color-ink)" strokeWidth={1.4} strokeLinecap="round" fill="none" />
+            {you(52, 24, 'n')}
+          </g>
+        </>
+      )}
+      {tactic === 'tiki_taka' && (
+        <>
+          <path d="M24 14 L34 32 L44 14 Z M44 14 L52 30 L34 32" stroke="var(--color-ink)" strokeWidth={1.1} fill="none" strokeDasharray="2 1.6" />
+          {[you(24, 14, 'a'), you(34, 32, 'b'), you(44, 14, 'c')]}
+          <g className="tx-glyph-move" style={{ '--gx': '4px', '--gy': '-3px' } as CSSProperties}>
+            {you(52, 30, 'd')}
+          </g>
+        </>
+      )}
+      {tactic === 'wing_play' && (
+        <>
+          <g className="tx-glyph-move" style={{ '--gy': '-3px' } as CSSProperties}>
+            {you(46, 8, 'l')}
+          </g>
+          <g className="tx-glyph-move" style={{ '--gy': '3px' } as CSSProperties}>
+            {you(46, 40, 'r')}
+          </g>
+          <path d="M48 40 C58 38, 60 30, 58 24" stroke="var(--color-ink)" strokeWidth={1.4} strokeLinecap="round" fill="none" strokeDasharray="2.4 1.8" />
+          {[you(56, 22, 's')]}
+        </>
+      )}
       {tactic === 'custom' && (
         <g stroke="var(--color-ink)" strokeWidth={1.4} fill="none" strokeLinecap="round">
           <path d="M14 34 C24 10, 34 40, 46 18 S 58 20, 60 14" strokeDasharray="0.1 3.4" strokeWidth={2.2} />
@@ -73,6 +118,16 @@ function tacticAlt(t: TacticKey, threat: string) {
       return 'Diagram: players pushing forward towards the opponents'
     case 'mark_threat':
       return `Diagram: a defender tight on ${threat}`
+    case 'counter':
+      return 'Diagram: a deep defence and one runner breaking forward'
+    case 'false_nine':
+      return 'Diagram: the centre-forward dropping back between the lines'
+    case 'tiki_taka':
+      return 'Diagram: a triangle of short passes'
+    case 'wing_play':
+      return 'Diagram: wingers wide on the touchlines, crossing into the box'
+    case 'custom':
+      return 'Diagram: a hand-drawn route for your own plan'
     default:
       return 'Diagram: a hand-drawn route for your own plan'
   }

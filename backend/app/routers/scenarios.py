@@ -20,6 +20,7 @@ from app.services.moments import CUSTOM_PREFIX
 from app.services.pundit import pundit_take, read_plan
 from app.services.simulation import (
     PRESETS,
+    TacticProfile,
     evaluate,
     match_rating,
     rating_label,
@@ -96,7 +97,7 @@ def get_scenario(slug: str, db: DbSession) -> ScenarioDetail:
     s = _get_scenario(db, slug)
     shapes = {
         team_id: {
-            key: suggest_shape(side["players"], profile, side.get("key_threat"))
+            key: suggest_shape(side["players"], profile, side.get("key_threat"), key)
             for key, profile in PRESETS.items()
         }
         for team_id, side in s.snapshot["sides"].items()
@@ -174,7 +175,11 @@ def _judge(
     plan = (body.custom_plan or "").strip() or None
     # Over their allowance, a visitor still gets a verdict, written by the model alone.
     use_ai = ai_allowed(request)
-    if body.tactic == "custom":
+    if body.tactic == "custom" and body.dials:
+        d = body.dials
+        profile = TacticProfile(d.depth, d.press, d.marking, d.attack, "Custom plan", width=d.width, direct=d.direct)
+        plan_source = d.source
+    elif body.tactic == "custom":
         profile, plan_source = read_plan(plan or "", side["name"], opponent["name"], use_ai=use_ai)
     else:
         profile, plan_source = PRESETS[body.tactic], "preset"

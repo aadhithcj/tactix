@@ -32,6 +32,19 @@ describe('offline model', () => {
     })
   })
 
+  it('matches the server for the new styles of play', () => {
+    // Reference values from evaluate() in simulation.py, on the real shape.
+    const expected = {
+      779: { false_nine: [7.3, 0.41, 0.32], counter: [6.2, 0.34, 0.34], tiki_taka: [7.4, 0.41, 0.31], wing_play: [6.6, 0.42, 0.36] },
+      771: { false_nine: [7.0, 0.39, 0.32], counter: [5.5, 0.33, 0.34], tiki_taka: [7.0, 0.39, 0.31], wing_play: [6.8, 0.39, 0.36] },
+    } as const
+    for (const [team, rows] of Object.entries(expected))
+      for (const [tactic, [rating, xgFor, xgAgainst]] of Object.entries(rows)) {
+        const r = simulateLocally('lusail-2022-71', detail, { team_id: Number(team), tactic: tactic as 'counter', placements: [], substitutions: [] })
+        expect([r.gaffer_rating, r.projection.xg_for, r.projection.xg_against]).toEqual([rating, xgFor, xgAgainst])
+      }
+  })
+
   it('rewards covering the ground the opponent actually attacked', () => {
     const side = detail.snapshot.sides[String(ARG)]
     const real = threatCoverage(side.players, side.threat_grid).coverage

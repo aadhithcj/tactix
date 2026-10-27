@@ -4,18 +4,19 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router'
 import { competitionName, Scoreline, SiteFooter, SiteHeader } from '../components/Chrome'
 import { clock, LiveMatch, type Speed } from '../components/LiveMatch'
+import { dialsFromNote, PlanBuilder, snapDials, type Dials } from '../components/PlanBuilder'
 import { mirror, Pitch, toTokens, ZONE_H, ZONE_W } from '../components/Pitch'
 import { TACTICS, TacticGlyph } from '../components/TacticGlyph'
 import { Verdict } from '../components/Verdict'
 import { api } from '../lib/api'
 import { LiveEngine, type CallOption } from '../lib/engine'
-import type { Setup } from '../lib/model'
+import { profileFromText, type Setup } from '../lib/model'
 import type { ScenarioDetail, SimulationResult, TacticKey } from '../lib/types'
 import { kitFor, kitVars } from '../lib/kits'
 import { shortName } from '../lib/names'
 import { useBoard } from '../lib/useBoard'
 
-const TACTIC_KEYS = new Set<TacticKey>(['park_bus', 'high_press', 'mark_threat', 'custom'])
+const TACTIC_KEYS = new Set<TacticKey>(TACTICS.map((t) => t.key))
 
 export default function Play() {
   const { slug = '' } = useParams()
@@ -177,6 +178,17 @@ function Touchline({
   const { side, opp } = board
   const [tactic, setTactic] = useState<TacticKey | null>(null)
   const [plan, setPlan] = useState(initialPlan)
+  // A custom plan is its dials, set on the chips; the note only pre-fills them.
+  const [dials, setDials] = useState<Dials>(() => snapDials(profileFromText(initialPlan)))
+  const touched = useRef(new Set<keyof Dials>())
+  const writeNote = (note: string) => {
+    setPlan(note)
+    setDials((d) => dialsFromNote(note, d, touched.current))
+  }
+  const setDial = (key: keyof Dials, value: number) => {
+    touched.current.add(key)
+    setDials((d) => ({ ...d, [key]: value }))
+  }
   const [selected, setSelected] = useState<number | null>(null)
   const [showThreat, setShowThreat] = useState(true)
   const [showGhosts, setShowGhosts] = useState(true)
@@ -206,10 +218,16 @@ function Touchline({
   const setup = (): Setup => ({
     tactic: tactic!,
     custom_plan: tactic === 'custom' ? plan : null,
+    dials: tactic === 'custom' ? { ...dials, source: 'model' } : null,
     placements: board.placements,
     substitutions: board.subs,
   })
-  const current = (): Snapshot => ({ tactic, plan, placements: JSON.stringify(board.placements), subs: board.subs.length })
+  const current = (): Snapshot => ({
+    tactic,
+    plan: tactic === 'custom' ? JSON.stringify(dials) : '',
+    placements: JSON.stringify(board.placements),
+    subs: board.subs.length,
+  })
   const toTop = () => requestAnimationFrame(() => top.current?.scrollIntoView({ block: 'start' }))
 
   const kickOff = () => {
@@ -303,7 +321,6 @@ function Touchline({
   const keyThreat = side.key_threat
   const cov = Math.round(board.coverage * 100)
   const realCov = Math.round(board.realCoverage * 100)
-  const needsPlan = tactic === 'custom' && plan.trim().length < 6
 
   return (
     <div ref={top} style={kitVars(side.name, opp.name)} className="mx-auto grid max-w-[1320px] scroll-mt-4 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,400px)] lg:py-8">
@@ -370,14 +387,15 @@ function Touchline({
                   role="radio"
                   aria-checked={active}
                   onClick={() => chooseTactic(t.key)}
-                  className={`lift flex items-center gap-3 rounded-[12px] border-2 border-ink p-2.5 text-left ${active ? 'bg-yellow' : 'bg-paper hover:bg-cream'}`}
+                  className={`lift flex items-center gap-3 rounded-[12px] border-2 border-ink p-2 text-left ${active ? 'bg-yellow' : 'bg-paper hover:bg-cream'}`}
                 >
                   <TacticGlyph tactic={t.key} threat={keyThreat?.name} />
                   <span>
                     <span className="block font-[800] leading-tight">
                       {t.key === 'mark_threat' && keyThreat ? `Mark ${shortName(keyThreat.name)}` : t.title}
                     </span>
-                    <span className="block text-sm leading-snug text-ink-soft">{t.blurb}</span>
+                    {/* Eight plans: only the chosen one explains itself, so the deck stays short. */}
+                    <span className={`text-sm leading-snug text-ink-soft ${active ? 'block' : 'sr-only'}`}>{t.blurb}</span>
                   </span>
                 </button>
               )
@@ -385,20 +403,21 @@ function Touchline({
           </div>
 
           {tactic === 'custom' && (
-            <div className="mt-4">
-              <label htmlFor="plan" className="font-[750]">
-                Your plan
+            <div className="mt-4 rounded-[12px] border-2 border-ink bg-cream p-3">
+              <PlanBuilder dials={dials} onChange={setDial} threatName={keyThreat ? shortName(keyThreat.name) : undefined} />
+              <label htmlFor="plan" className="mt-3 block text-sm font-[750]">
+                A note for the pundit <span className="font-semibold text-ink-soft">(optional)</span>
               </label>
               <textarea
                 id="plan"
                 value={plan}
-                onChange={(e) => setPlan(e.target.value)}
+                onChange={(e) => writeNote(e.target.value)}
                 maxLength={600}
-                rows={4}
-                placeholder={`e.g. Drop into a back five, double up on ${keyThreat ? shortName(keyThreat.name) : 'their winger'} and break on the counter.`}
-                className="mt-1.5 w-full resize-y rounded-[10px] border-2 border-ink bg-cream px-3 py-2.5 leading-snug focus:bg-paper focus:outline-none focus-visible:outline-3 focus-visible:outline-sky-deep"
+                rows={2}
+                placeholder={`e.g. Sit deep, double up on ${keyThreat ? shortName(keyThreat.name) : 'their winger'} and break.`}
+                className="mt-1 w-full resize-y rounded-[10px] border-2 border-ink bg-paper px-3 py-2 text-sm leading-snug focus:outline-none focus-visible:outline-3 focus-visible:outline-sky-deep"
               />
-              <p className="mt-1 text-sm text-ink-soft">Then drag players to match it. The shape counts as much as the words.</p>
+              <p className="mt-1 text-xs text-ink-soft">Typing sets any dials you haven't picked. Then drag players to match: the shape counts as much as the plan.</p>
             </div>
           )}
 
@@ -412,14 +431,13 @@ function Touchline({
           <button
             type="button"
             className="btn btn-primary lift mt-5 w-full text-lg"
-            disabled={!tactic || needsPlan}
+            disabled={!tactic}
             onClick={paused ? resume : kickOff}
           >
             {paused ? 'Resume the match' : 'Blow the whistle'}
           </button>
           {!tactic && <p className="mt-2 text-center text-sm text-ink-soft">Pick a plan to play it out.</p>}
-          {needsPlan && <p className="mt-2 text-center text-sm text-ink-soft">Write a sentence or two about your plan first.</p>}
-          {!paused && tactic && !needsPlan && (
+          {!paused && tactic && (
             <p className="mt-2 text-center text-sm text-ink-soft">The match plays out live. You can stop it and change things.</p>
           )}
         </div>
@@ -446,7 +464,7 @@ function describeChange(before: Snapshot | null, after: Snapshot, board: ReturnT
   const parts: string[] = []
   if (after.tactic !== before.tactic || (after.tactic === 'custom' && after.plan.trim() !== before.plan.trim())) {
     const title = TACTICS.find((t) => t.key === after.tactic)?.title ?? 'a new plan'
-    parts.push(after.tactic === 'custom' ? `new plan, "${after.plan.trim().slice(0, 80)}"` : `switched to ${title.toLowerCase()}`)
+    parts.push(after.tactic === 'custom' ? 'set new dials for your own plan' : `switched to ${title.toLowerCase()}`)
   }
   for (const sub of board.subs.slice(before.subs)) {
     const on = board.side.bench.find((b) => b.id === sub.on_id)?.name

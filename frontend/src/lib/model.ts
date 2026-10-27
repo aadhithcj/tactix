@@ -26,28 +26,40 @@ const COVER_SIGMA = 9
 const MARK_SIGMA = 8
 const FINAL_THIRD_X = 80
 
+/** 0..1 dials; width and direct are neutral at 0.5 and 0.4, where they change nothing. */
 export interface Profile {
   depth: number
   press: number
   marking: number
   attack: number
+  width: number
+  direct: number
   label: string
 }
 
+const STYLE = { width: 0.5, direct: 0.4 }
 export const PRESETS: Record<Exclude<TacticKey, 'custom'>, Profile> = {
-  park_bus: { depth: 0.1, press: 0.15, marking: 0.3, attack: 0.15, label: 'Park the bus' },
-  high_press: { depth: 0.85, press: 0.95, marking: 0.3, attack: 0.65, label: 'High press' },
-  mark_threat: { depth: 0.45, press: 0.45, marking: 1, attack: 0.4, label: 'Mark the threat' },
+  park_bus: { depth: 0.1, press: 0.15, marking: 0.3, attack: 0.15, ...STYLE, label: 'Park the bus' },
+  high_press: { depth: 0.85, press: 0.95, marking: 0.3, attack: 0.65, ...STYLE, label: 'High press' },
+  mark_threat: { depth: 0.45, press: 0.45, marking: 1, attack: 0.4, ...STYLE, label: 'Mark the threat' },
+  false_nine: { depth: 0.55, press: 0.55, marking: 0.3, attack: 0.5, width: 0.4, direct: 0.2, label: 'False 9' },
+  counter: { depth: 0.2, press: 0.3, marking: 0.35, attack: 0.35, width: 0.5, direct: 0.9, label: 'Counter-attack' },
+  tiki_taka: { depth: 0.6, press: 0.6, marking: 0.3, attack: 0.5, width: 0.45, direct: 0.05, label: 'Tiki-taka' },
+  wing_play: { depth: 0.5, press: 0.45, marking: 0.3, attack: 0.55, width: 0.95, direct: 0.5, label: 'Wing play' },
 }
-const NEUTRAL: Profile = { depth: 0.5, press: 0.45, marking: 0.3, attack: 0.45, label: 'Custom plan' }
+const NEUTRAL: Profile = { depth: 0.5, press: 0.45, marking: 0.3, attack: 0.45, ...STYLE, label: 'Custom plan' }
 
 const KEYWORDS: [RegExp, Partial<Record<keyof Omit<Profile, 'label'>, number>>][] = [
   [/\b(park|bus|low block|deep|sit (back|deep|tight)|defend|protect|drop)\b/, { depth: -0.3, attack: -0.2, press: -0.15 }],
   [/\b(press|squeeze|high line|push (up|high)|aggressive|front foot)\b/, { depth: 0.3, press: 0.35 }],
   [/\b(mark|man[- ]?mark|shadow|follow|double[- ]?team|tight on)\b/, { marking: 0.5 }],
   [/\b(attack|all out|go for|chase|throw|more bodies|overload|winner|equali[sz]er)\b/, { attack: 0.35, depth: 0.1 }],
-  [/\b(counter|break|transition|long ball|in behind)\b/, { attack: 0.15, depth: -0.15 }],
-  [/\b(keep (the )?ball|possession|patient|control|rest defen[cs]e)\b/, { attack: 0.05, press: 0.05 }],
+  [/\b(counter|break|transition|long ball|in behind)\b/, { attack: 0.15, depth: -0.15, direct: 0.35 }],
+  [/\b(keep (the )?ball|possession|patient|control|rest defen[cs]e)\b/, { attack: 0.05, press: 0.05, direct: -0.25 }],
+  [/\b(tiki[- ]?taka|short pass(es|ing)?|one[- ]?touch|pass(ing)? it out)\b/, { direct: -0.3 }],
+  [/\b(false (9|nine)|drop(ping)? striker|striker drops)\b/, { direct: -0.2, width: -0.1 }],
+  [/\b(wide|width|wing(s|ers)?|cross(es|ing)?|flanks?|stretch)\b/, { width: 0.35 }],
+  [/\b(narrow|through the middle|central(ly)?|half[- ]?spaces?)\b/, { width: -0.3 }],
   [/\b(waste time|time[- ]?waste|slow (it|the game) down|manage)\b/, { attack: -0.15, press: -0.1 }],
 ]
 
@@ -187,6 +199,10 @@ const worry = (text: string) => {
 const OPENINGS: Partial<Record<TacticKey, string>> = {
   park_bus: 'Parking the bus',
   high_press: 'Pressing high',
+  false_nine: 'Playing a false 9',
+  counter: 'Sitting in and countering',
+  tiki_taka: 'Keeping the ball',
+  wing_play: 'Going round the outside',
   custom: 'Your plan',
 }
 
@@ -203,14 +219,19 @@ export function matchRating(lead: number, xgFor: number, xgAgainst: number, base
   return round(clamp(5.8 + 4.2 * Math.tanh(raw / 4), 1, 10), 1)
 }
 
-export type Setup = Pick<SimulationRequest, 'tactic' | 'custom_plan' | 'placements' | 'substitutions'>
+export type Setup = Pick<SimulationRequest, 'tactic' | 'custom_plan' | 'placements' | 'substitutions' | 'dials'>
 
 /** How one set-up scales each side's real chance rate. `minute` drives the
  * late-press term, so a live match re-reads it as the clock runs. */
 export function setupRates(detail: ScenarioDetail, teamId: number, setup: Setup, minute: number) {
   const side = detail.snapshot.sides[String(teamId)]
+  const opp = Object.values(detail.snapshot.sides).find((s) => s.team_id !== teamId)!
   const profile: Profile =
-    setup.tactic === 'custom' ? profileFromText(setup.custom_plan ?? '') : PRESETS[setup.tactic]
+    setup.tactic !== 'custom'
+      ? PRESETS[setup.tactic]
+      : setup.dials
+        ? { ...setup.dials, label: 'Custom plan' }
+        : profileFromText(setup.custom_plan ?? '')
 
   const onPitch = new Map<number, SnapshotPlayer>(side.players.map((p) => [p.id, { ...p }]))
   const subNotes: { off: SnapshotPlayer; on: SnapshotPlayer }[] = []
@@ -252,8 +273,16 @@ export function setupRates(detail: ScenarioDetail, teamId: number, setup: Setup,
   against *= Math.exp(0.05 * (user.bodiesForward - base.bodiesForward))
   against *= 1 + 0.3 * (0.6 - fit)
 
+  // How you attack, against how they defend: counters punish a high line,
+  // width stretches a deep block, and direct play gives the ball back sooner.
+  const theirLine = shapeMetrics(opp.players, opp).behindRisk
+  against *= 1 + 0.25 * (profile.direct - 0.4)
+  against *= 1 + 0.1 * (profile.width - 0.5)
+
   let forMult = 0.5 + 1.1 * profile.attack
   forMult *= 1 + 0.15 * (profile.depth - 0.5)
+  forMult *= 1 + 0.5 * (profile.direct - 0.4) * (theirLine - 0.4)
+  forMult *= 1 + 0.5 * (profile.width - 0.5) * (0.4 - theirLine)
   forMult *= Math.exp(0.1 * (user.bodiesForward - base.bodiesForward))
   forMult *= 1 + 0.15 * (fit - 0.6)
   for (const n of subNotes) {

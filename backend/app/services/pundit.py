@@ -31,6 +31,8 @@ class PlanReading(BaseModel):
     press: float = Field(ge=0, le=1, description="Pressing intensity")
     marking: float = Field(ge=0, le=1, description="Dedication to man-marking their key threat")
     attack: float = Field(ge=0, le=1, description="Commitment of bodies to attack")
+    width: float = Field(ge=0, le=1, description="0 = attack through the middle, 1 = stretch play wide and cross")
+    direct: float = Field(ge=0, le=1, description="0 = patient short passing, 1 = direct, quick counters and long balls")
     summary: str = Field(description="The plan restated in under 12 words")
 
 
@@ -97,14 +99,22 @@ def read_plan(plan: str, team: str, opponent: str, *, use_ai: bool = True) -> tu
             f"Team: {team}. Opponent: {opponent}.\n"
             f"Instruction: \"{plan}\"\n"
             "Score each dial from 0 to 1. A neutral, balanced plan is depth 0.5, press 0.45, "
-            "marking 0.3, attack 0.45."
+            "marking 0.3, attack 0.45, width 0.5, direct 0.4."
         ),
         PlanReading,
         use_ai=use_ai,
     )
     if isinstance(reading, PlanReading):
         return (
-            TacticProfile(reading.depth, reading.press, reading.marking, reading.attack, "Custom plan"),
+            TacticProfile(
+                reading.depth,
+                reading.press,
+                reading.marking,
+                reading.attack,
+                "Custom plan",
+                width=reading.width,
+                direct=reading.direct,
+            ),
             "gemini",
         )
     return profile_from_text(plan), "model"
@@ -251,6 +261,10 @@ def _template_take(side: dict[str, Any], opp: dict[str, Any], result: dict[str, 
         "park_bus": "Parking the bus",
         "high_press": "Pressing high",
         "mark_threat": f"Man-marking {(side.get('key_threat') or {}).get('name', 'their danger man')}",
+        "false_nine": "Playing a false 9",
+        "counter": "Sitting in and countering",
+        "tiki_taka": "Keeping the ball",
+        "wing_play": "Going round the outside",
     }.get(result["tactic"], "Your plan")
     lines = [f"{opening} for the last {proj['minutes']} minutes"]
     lines[0] += f" {' and '.join(swing)}." if swing else " barely moves the needle either way."
