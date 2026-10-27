@@ -1,4 +1,5 @@
 import { reportLocally, simulateLocally } from './model'
+import { REPLAY_TYPES } from './replay'
 import type {
   CatalogCompetition,
   CatalogMatch,
@@ -112,6 +113,12 @@ export const api = {
 
   match: (id: number) =>
     request<MatchDetail>(`/api/matches/${id}`, undefined, () => fixture(`match-${id}`)),
+
+  /** Every ball event from a minute on, for the real-match replay. Needs the API: no offline copy. */
+  replayEvents: (id: number, minuteFrom: number) =>
+    request<MatchEvent[]>(
+      `/api/matches/${id}/events?minute_from=${minuteFrom}&limit=5000&${REPLAY_TYPES.map((t) => `event_type=${encodeURIComponent(t)}`).join('&')}`,
+    ),
 
   shots: (id: number) =>
     request<MatchEvent[]>(`/api/matches/${id}/events?event_type=Shot&limit=200`, undefined, () =>

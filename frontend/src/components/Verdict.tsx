@@ -1,8 +1,10 @@
-import { Check, Minus, X } from 'lucide-react'
+import { Check, Minus, Play, X } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
+import { useState } from 'react'
 import { Link } from 'react-router'
 import type { ScenarioDetail, SimulationResult } from '../lib/types'
 import { mirror, Pitch, toTokens } from './Pitch'
+import { RealReplay } from './RealReplay'
 import { ShareTicket } from './ShareTicket'
 
 interface VerdictProps {
@@ -20,6 +22,7 @@ export function Verdict({ detail, result, onRetry }: VerdictProps) {
   const home = snap.sides[String(snap.match.home_team_id)]
   const away = snap.sides[String(snap.match.away_team_id)]
   const live = result.live
+  const [watching, setWatching] = useState(false)
 
   return (
     <div className="mx-auto max-w-[1320px] px-4 py-8 sm:px-6 sm:py-12">
@@ -104,6 +107,29 @@ export function Verdict({ detail, result, onRetry }: VerdictProps) {
           {live && <YourStory live={live} you={side.name} them={opp.name} />}
           <RealStory detail={detail} actual={actual} />
         </div>
+      </section>
+
+      {/* History, drawn */}
+      <section aria-labelledby="real-title" className="panel mt-6 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
+          <div>
+            <h2 id="real-title" className="text-xl font-[850]">
+              {live ? 'Now watch what really happened' : 'Watch what really happened'}
+            </h2>
+            <p className="text-sm text-ink-soft">Every real pass and shot from minute {snap.minute}, chalked up as it happened.</p>
+          </div>
+          {!watching && (
+            <button type="button" onClick={() => setWatching(true)} className="btn btn-ink lift">
+              <Play size={16} strokeWidth={2.75} aria-hidden="true" />
+              Watch it
+            </button>
+          )}
+        </div>
+        {watching && (
+          <div className="border-t-2 border-ink">
+            <RealReplay detail={detail} teamId={result.team_id} yours={live?.final_score} />
+          </div>
+        )}
       </section>
 
       {/* Findings and shape numbers */}

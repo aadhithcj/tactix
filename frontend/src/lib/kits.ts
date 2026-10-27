@@ -117,3 +117,16 @@ export function kitVars(you: string, them: string): CSSProperties {
     '--kit-them-ink': b.ink,
   } as CSSProperties
 }
+
+/**
+ * A kit colour that still reads as chalk on a dark board: dark shirts (navy,
+ * black) are lifted towards white, keeping their hue.
+ */
+export function chalkColour(fill: string): string {
+  const rgb = [1, 3, 5].map((i) => parseInt(fill.slice(i, i + 2), 16) / 255)
+  const lum = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+  if (lum >= 0.3) return fill
+  const lift = Math.min(0.75, 0.3 + (0.3 - lum) * 1.6)
+  const hex = rgb.map((c) => Math.round((c + (1 - c) * lift) * 255).toString(16).padStart(2, '0')).join('')
+  return `#${hex}`
+}
