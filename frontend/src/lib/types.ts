@@ -78,6 +78,12 @@ export interface Snapshot {
   horizon_minutes: number
   full_time_minute: number
   score: { home: number; away: number }
+  /** Home page copy for curated moments. */
+  hero?: {
+    default_team_id: number
+    caption: string
+    by_team: Record<string, { headline: string; hook: string; ask: string }>
+  }
   sides: Record<string, Side>
   actual: {
     goals_after: Goal[]

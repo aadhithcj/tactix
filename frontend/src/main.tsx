@@ -4,6 +4,11 @@ import { createRoot, hydrateRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 import { makeQueryClient, routes } from './app'
 import './index.css'
+import { chooseHeroSlug, loadHero } from './lib/hero'
+
+// The home hero must be known before the first render (and match the
+// prerendered page, which names its hero in window.__TACTIX_HERO__).
+await loadHero(chooseHeroSlug())
 
 const router = createBrowserRouter(routes)
 const app = (

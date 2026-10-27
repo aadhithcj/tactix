@@ -1,6 +1,6 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
@@ -13,11 +13,14 @@ from app.schemas import (
     MatchDetailRead,
     MatchSummaryRead,
 )
+from app.services.limits import ai_allowed
 from app.services.pundit import answer_question
 
 router = APIRouter(prefix="/api/matches", tags=["matches"])
 
 DbSession = Annotated[Session, Depends(get_db)]
+
+_ask_cache: dict[tuple[int, str], AskResponse] = {}
 
 
 def _get_match(db: Session, match_id: int) -> models.Match:
@@ -140,8 +143,12 @@ def get_match_events(
 
 
 @router.post("/{match_id}/ask", response_model=AskResponse)
-def ask_about_match(match_id: int, body: AskRequest, db: DbSession) -> AskResponse:
+def ask_about_match(match_id: int, body: AskRequest, db: DbSession, request: Request) -> AskResponse:
     match = _get_match(db, match_id)
+    # Repeated questions are answered from memory and never reach Gemini.
+    cache_key = (match_id, " ".join(body.question.lower().split()))
+    if cache_key in _ask_cache:
+        return _ask_cache[cache_key]
     stats = match.stats_json or {}
     teams = stats.get("team_stats", {}).get("teams", {})
     timeline = stats.get("momentum_timeline", [])
@@ -177,4 +184,9 @@ def ask_about_match(match_id: int, body: AskRequest, db: DbSession) -> AskRespon
             for ev, p in shots
         ],
     }
-    return AskResponse(**answer_question(body.question, context))
+    answer = AskResponse(**answer_question(body.question, context, use_ai=ai_allowed(request)))
+    if answer.source == "gemini":
+        if len(_ask_cache) >= 500:
+            _ask_cache.pop(next(iter(_ask_cache)))
+        _ask_cache[cache_key] = answer
+    return answer

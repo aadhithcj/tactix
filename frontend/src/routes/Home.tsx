@@ -6,38 +6,27 @@ import { competitionName, ScoreBug, SiteFooter, SiteHeader, teamCode } from '../
 import { MiniPitch } from '../components/MiniPitch'
 import { ShotMap } from '../components/ShotMap'
 import { TACTICS, TacticGlyph } from '../components/TacticGlyph'
-import lusail from '../data/fixtures/scenario-lusail-2022-71.json'
 import { api } from '../lib/api'
+import { getHero } from '../lib/hero'
 import { kitVars } from '../lib/kits'
 import { shortName } from '../lib/names'
 import { buildScene, whereInWords } from '../lib/scene'
-import type { ScenarioDetail, ScenarioSummary, TacticKey } from '../lib/types'
+import type { ScenarioSummary, TacticKey } from '../lib/types'
 import { usePrefersReducedMotion } from '../lib/usePrefersReducedMotion'
 
-// The hero renders from bundled scenario data, so it can be prerendered and
-// paints with no request. The game itself runs against the API.
-const HERO = lusail as unknown as ScenarioDetail
-const ARG = 779
-const FRA = 771
-const HERO_MATCH = 3869685
-
-const COPY: Record<number, { headline: string; hook: string; ask: string }> = {
-  [ARG]: {
-    headline: 'It’s 2–0 in a World Cup final. Don’t blow it.',
-    hook: 'France have barely had a shot, but Mbappé is still out there.',
-    ask: 'How do you protect the lead?',
-  },
-  [FRA]: {
-    headline: '2–0 down in a World Cup final. Save it.',
-    hook: 'Twenty minutes left, barely a shot all game, and Messi has already scored.',
-    ask: 'How do you get back into it?',
-  },
-}
+// The analyst teaser always shows the 2022 final, whose shots ship with the app.
+const SHOTS_MATCH = 3869685
+const SHOTS_HOME = 779
 
 export default function Home() {
   const navigate = useNavigate()
   const reduce = usePrefersReducedMotion()
-  const [teamId, setTeamId] = useState(ARG)
+  // A different famous moment on each load, chosen before render (see main.tsx).
+  const HERO = getHero()
+  const snap = HERO.snapshot
+  const homeSide = snap.sides[String(snap.match.home_team_id)]
+  const awaySide = snap.sides[String(snap.match.away_team_id)]
+  const [teamId, setTeamId] = useState(snap.hero?.default_team_id ?? homeSide.team_id)
   const [tactic, setTactic] = useState<TacticKey | null>(null)
   const [plan, setPlan] = useState('')
   const [locking, setLocking] = useState(false)
@@ -46,11 +35,15 @@ export default function Home() {
   const dock = useRef<HTMLDivElement>(null)
   const sceneId = useId().replace(/:/g, '')
 
-  const scene = useMemo(() => buildScene(HERO, teamId, tactic), [teamId, tactic])
+  const scene = useMemo(() => buildScene(HERO, teamId, tactic), [HERO, teamId, tactic])
   const { side, opp, hero } = scene
-  const copy = COPY[teamId]
   const threatName = side.key_threat ? shortName(side.key_threat.name) : 'their danger man'
-  const snap = HERO.snapshot
+  const copy = snap.hero?.by_team[String(teamId)] ?? {
+    headline: HERO.title,
+    hook: side.dilemma,
+    ask: 'What’s your plan?',
+  }
+  const caption = `${snap.hero?.caption ?? snap.match.venue}, ${new Date(snap.match.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`
   const canLock = tactic !== null && (tactic !== 'custom' || plan.trim().length >= 6)
   const tacticTitle = (key: TacticKey) => (key === 'mark_threat' ? `Mark ${threatName}` : TACTICS.find((t) => t.key === key)!.title)
 
@@ -98,8 +91,8 @@ export default function Home() {
               <div className="panel overflow-hidden">
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b-2 border-ink px-3 py-2.5 sm:px-4">
                   <ScoreBug
-                    home="ARG"
-                    away="FRA"
+                    home={homeSide.code}
+                    away={awaySide.code}
                     score={snap.score}
                     minute={snap.minute}
                     second={snap.second ?? 0}
@@ -107,7 +100,7 @@ export default function Home() {
                     status={locking ? 'LIVE' : 'PAUSED'}
                     size="md"
                   />
-                  <figcaption className="text-sm font-semibold text-ink-soft">World Cup Final, Lusail, 18 December 2022</figcaption>
+                  <figcaption className="text-sm font-semibold text-ink-soft">{caption}</figcaption>
                 </div>
                 <div className="relative bg-pitch">
                   <div className="mx-auto w-full max-w-[34rem] lg:w-[min(100%,calc((100dvh-26rem)*1.1))] lg:min-w-[22rem] lg:max-w-none">
@@ -156,7 +149,7 @@ export default function Home() {
                 <button type="button" onClick={makeTheCall} className="btn btn-primary lift min-h-14 px-7 text-xl">
                   Make the call
                 </button>
-                <SideToggle teamId={teamId} onChange={switchSide} />
+                <SideToggle teamId={teamId} onChange={switchSide} options={[snap.hero?.default_team_id === awaySide.team_id ? awaySide : homeSide, snap.hero?.default_team_id === awaySide.team_id ? homeSide : awaySide].map((t) => ({ id: t.team_id, label: t.name }))} />
               </div>
               <RatingStamp />
             </div>
@@ -239,11 +232,15 @@ export default function Home() {
   )
 }
 
-function SideToggle({ teamId, onChange }: { teamId: number; onChange: (id: number) => void }) {
-  const options = [
-    { id: ARG, label: 'Argentina' },
-    { id: FRA, label: 'France' },
-  ]
+function SideToggle({
+  teamId,
+  onChange,
+  options,
+}: {
+  teamId: number
+  onChange: (id: number) => void
+  options: { id: number; label: string }[]
+}) {
   return (
     <div role="group" aria-labelledby="managing-label" className="flex items-center gap-2">
       <span id="managing-label" className="text-[0.95rem] font-semibold text-ink-soft">
@@ -309,7 +306,8 @@ function SceneDescription({ id, scene, minute }: { id: string; scene: ReturnType
 
 function MoreMoments() {
   const list = useQuery({ queryKey: ['scenarios'], queryFn: api.scenarios })
-  const others = list.data?.filter((s) => s.slug !== HERO.slug)
+  const heroSlug = getHero().slug
+  const others = list.data?.filter((s) => s.slug !== heroSlug)
   return (
     <section aria-labelledby="moments-title" className="border-t-2 border-ink bg-cream">
       <div className="mx-auto max-w-[1320px] px-4 py-16 sm:px-6 sm:py-24">
@@ -413,7 +411,7 @@ function HowItPlays() {
 }
 
 function AnalystBand() {
-  const shots = useQuery({ queryKey: ['shots', HERO_MATCH], queryFn: () => api.shots(HERO_MATCH) })
+  const shots = useQuery({ queryKey: ['shots', SHOTS_MATCH], queryFn: () => api.shots(SHOTS_MATCH) })
   return (
     <section aria-labelledby="analyst-title" className="border-t-2 border-ink bg-sky">
       <div className="mx-auto grid max-w-[1320px] gap-10 px-4 py-16 sm:px-6 sm:py-24 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-center">
@@ -425,13 +423,13 @@ function AnalystBand() {
             Analyst Mode opens up every match behind the moments: shot maps, passing networks, momentum swings and xG,
             plus an analyst you can ask about what you're looking at.
           </p>
-          <Link to={`/analyst/${HERO_MATCH}`} className="btn btn-ink lift mt-7 min-h-12">
+          <Link to={`/analyst/${SHOTS_MATCH}`} className="btn btn-ink lift mt-7 min-h-12">
             Open Analyst Mode
           </Link>
         </div>
         <figure className="panel overflow-hidden" style={kitVars('Argentina', 'France')}>
           {shots.data ? (
-            <ShotMap shots={shots.data} homeId={ARG} homeName="Argentina" awayName="France" compact />
+            <ShotMap shots={shots.data} homeId={SHOTS_HOME} homeName="Argentina" awayName="France" compact />
           ) : (
             <div className="aspect-[3/2] bg-pitch" aria-busy="true" />
           )}

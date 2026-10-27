@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from app.services import moments
+from app.services.limits import require_fetch_allowance
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
@@ -101,9 +102,10 @@ def matches(
 
 
 @router.post("/moments", response_model=MomentCreated, status_code=status.HTTP_201_CREATED)
-def create_moment(body: MomentRequest) -> MomentCreated:
+def create_moment(body: MomentRequest, request: Request) -> MomentCreated:
     """Build a playable moment from any open-data match. Takes a few seconds
     the first time a match is used: its events are fetched and stored."""
+    require_fetch_allowance(request)
     try:
         slug = moments.create_moment(body.competition_id, body.season_id, body.match_id, body.minute)
     except moments.SourceUnavailable as exc:
@@ -116,9 +118,10 @@ def create_moment(body: MomentRequest) -> MomentCreated:
 
 
 @router.post("/analyse", response_model=AnalyseReady)
-def analyse_match(body: AnalyseRequest) -> AnalyseReady:
+def analyse_match(body: AnalyseRequest, request: Request) -> AnalyseReady:
     """Store any open-data match so Analyst Mode can show it. Takes a few
     seconds the first time a match is used."""
+    require_fetch_allowance(request)
     try:
         match_id = moments.ensure_match(body.competition_id, body.season_id, body.match_id)
     except moments.SourceUnavailable as exc:

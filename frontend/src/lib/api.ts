@@ -17,6 +17,10 @@ const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/
 /** Bundled snapshots of the seeded data, used when the API can't be reached. */
 const fixtures = import.meta.glob<{ default: unknown }>('../data/fixtures/*.json')
 
+export async function loadFixture<T>(name: string): Promise<T> {
+  return fixture<T>(name)
+}
+
 async function fixture<T>(name: string): Promise<T> {
   const load = fixtures[`../data/fixtures/${name}.json`]
   if (!load) throw new ApiError(`No offline copy of ${name}`, 404)

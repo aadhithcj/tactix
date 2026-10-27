@@ -7,6 +7,13 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
     GEMINI_TIMEOUT_SECONDS: float = 20.0
+    # Gemini calls allowed per UTC day across all visitors. The free tier allows
+    # 20 a day for gemini-2.5-flash; stay under it. Raise this on a paid key.
+    GEMINI_DAILY_BUDGET: int = 15
+    # Per visitor (client IP): Gemini-backed actions, and new matches fetched.
+    AI_PER_MINUTE: int = 4
+    AI_PER_DAY: int = 20
+    FETCHES_PER_HOUR: int = 10
     ENVIRONMENT: str = "development"
     # Comma-separated list of exact origins allowed to call the API.
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://localhost:4173"

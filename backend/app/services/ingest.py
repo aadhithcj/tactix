@@ -17,6 +17,7 @@ from app import models
 from app.database import SessionLocal
 from app.scenarios_catalog import ScenarioSpec
 from app.services.data_engine import StatsBombProcessor
+from app.services.hero import build_hero
 from app.services.snapshot import SnapshotBuilder
 
 logger = logging.getLogger("tactix.ingest")
@@ -180,6 +181,9 @@ def ingest_match(
     match_date = datetime.strptime(metadata["match_date"], "%Y-%m-%d").date()
 
     snapshots = [(s, SnapshotBuilder(events_df, lineups, metadata, s).build()) for s in specs]
+    for s, snapshot in snapshots:
+        if s.featured:
+            snapshot["hero"] = build_hero(s, snapshot)
 
     events_to_insert: list[dict[str, Any]] = []
     action_df = events_df[events_df["type"].isin(TARGET_EVENT_TYPES)]

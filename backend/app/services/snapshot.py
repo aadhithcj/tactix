@@ -457,6 +457,7 @@ class SnapshotBuilder:
             "horizon_minutes": horizon,
             "full_time_minute": full_time,
             "score": score,
+            "goals_before": [{k: v for k, v in g.items() if k != "_clock"} for g in before_goals],
             "sides": sides,
             "actual": {
                 "goals_after": [{k: v for k, v in g.items() if k != "_clock"} for g in after_goals],

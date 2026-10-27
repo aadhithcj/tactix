@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.services.limits import gemini_budget
 from app.services.simulation import NEUTRAL, TacticProfile, profile_from_text
 
 logger = logging.getLogger("tactix.pundit")
@@ -41,8 +42,11 @@ def gemini_enabled() -> bool:
     return bool(settings.GEMINI_API_KEY)
 
 
-def _generate(prompt: str, schema: type[BaseModel]) -> BaseModel | None:
-    if not gemini_enabled():
+def _generate(prompt: str, schema: type[BaseModel], *, use_ai: bool = True) -> BaseModel | None:
+    if not (use_ai and gemini_enabled()):
+        return None
+    # Every call spends from the daily budget, so the free tier can't be drained.
+    if not gemini_budget.try_spend():
         return None
     try:
         from google import genai
@@ -71,12 +75,18 @@ def _generate(prompt: str, schema: type[BaseModel]) -> BaseModel | None:
     except FutureTimeout:
         logger.warning("Gemini timed out; using fallback.")
     except Exception as exc:  # noqa: BLE001 - any SDK failure falls back
+        if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
+            gemini_budget.quota_exhausted()
         logger.warning("Gemini call failed: %s", exc)
     return None
 
 
+# Public name for other services (hero copy) that need structured Gemini output.
+generate_structured = _generate
+
+
 # ------------------------------------------------------------------ plans
-def read_plan(plan: str, team: str, opponent: str) -> tuple[TacticProfile, str]:
+def read_plan(plan: str, team: str, opponent: str, *, use_ai: bool = True) -> tuple[TacticProfile, str]:
     """Turn a free-text plan into tactic dials. Returns (profile, source)."""
     plan = plan.strip()
     if not plan:
@@ -90,6 +100,7 @@ def read_plan(plan: str, team: str, opponent: str) -> tuple[TacticProfile, str]:
             "marking 0.3, attack 0.45."
         ),
         PlanReading,
+        use_ai=use_ai,
     )
     if isinstance(reading, PlanReading):
         return (
@@ -100,7 +111,7 @@ def read_plan(plan: str, team: str, opponent: str) -> tuple[TacticProfile, str]:
 
 
 # ------------------------------------------------------------------ verdict
-def pundit_take(snapshot: dict[str, Any], result: dict[str, Any], plan: str | None) -> dict[str, str]:
+def pundit_take(snapshot: dict[str, Any], result: dict[str, Any], plan: str | None, *, use_ai: bool = True) -> dict[str, str]:
     side = snapshot["sides"][str(result["team_id"])]
     opp = snapshot["sides"][str(result["opponent_id"])]
     proj = result["projection"]
@@ -132,6 +143,7 @@ def pundit_take(snapshot: dict[str, Any], result: dict[str, Any], plan: str | No
             f"FACTS:\n{json.dumps(facts, ensure_ascii=False, default=str)}"
         ),
         PunditTake,
+        use_ai=use_ai,
     )
     if isinstance(take, PunditTake):
         return {"headline": take.headline, "take": take.take, "source": "gemini"}
@@ -182,7 +194,7 @@ def _template_take(side: dict[str, Any], opp: dict[str, Any], result: dict[str, 
 
 
 # ------------------------------------------------------------------ analyst
-def answer_question(question: str, context: dict[str, Any]) -> dict[str, str]:
+def answer_question(question: str, context: dict[str, Any], *, use_ai: bool = True) -> dict[str, str]:
     reply = _generate(
         (
             "You are a football data analyst. Answer the question in 2-4 sentences using ONLY the "
@@ -190,6 +202,7 @@ def answer_question(question: str, context: dict[str, Any]) -> dict[str, str]:
             f"DATA:\n{json.dumps(context, ensure_ascii=False, default=str)}\n\nQUESTION: {question}"
         ),
         AnalystAnswer,
+        use_ai=use_ai,
     )
     if isinstance(reply, AnalystAnswer):
         return {"answer": reply.answer, "source": "gemini"}

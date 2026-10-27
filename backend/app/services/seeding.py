@@ -46,9 +46,12 @@ def seed_catalog(only: list[str] | None = None) -> int:
 
 
 def missing_catalog_slugs() -> list[str]:
+    """Curated moments not in the database yet, or stored before they had
+    home page hero copy (those are rebuilt once)."""
     with SessionLocal() as db:
-        have = set(db.execute(select(models.Scenario.slug)).scalars())
-    return [spec.slug for spec in CATALOG if spec.slug not in have]
+        rows = db.execute(select(models.Scenario.slug, models.Scenario.snapshot)).all()
+    complete = {slug for slug, snapshot in rows if snapshot and "hero" in snapshot}
+    return [spec.slug for spec in CATALOG if spec.slug not in complete]
 
 
 def seed_missing_in_background() -> threading.Thread | None:

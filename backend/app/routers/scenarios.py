@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from app.schemas import (
     SimulationRequest,
     SimulationResponse,
 )
+from app.services.limits import ai_allowed
 from app.services.moments import CUSTOM_PREFIX
 from app.services.pundit import pundit_take, read_plan
 from app.services.simulation import PRESETS, evaluate, suggest_shape
@@ -102,7 +103,7 @@ def _bad_request(detail: str) -> HTTPException:
 
 
 @router.post("/{slug}/simulate", response_model=SimulationResponse)
-def simulate(slug: str, body: SimulationRequest, db: DbSession) -> SimulationResponse:
+def simulate(slug: str, body: SimulationRequest, db: DbSession, request: Request) -> SimulationResponse:
     scenario = _get_scenario(db, slug)
     snap = scenario.snapshot
     side = snap["sides"].get(str(body.team_id))
@@ -134,13 +135,15 @@ def simulate(slug: str, body: SimulationRequest, db: DbSession) -> SimulationRes
         placements[p.player_id] = (p.x, p.y)
 
     plan = (body.custom_plan or "").strip() or None
+    # Over their allowance, a visitor still gets a verdict, written by the model alone.
+    use_ai = ai_allowed(request)
     if body.tactic == "custom":
-        profile, plan_source = read_plan(plan or "", side["name"], opponent["name"])
+        profile, plan_source = read_plan(plan or "", side["name"], opponent["name"], use_ai=use_ai)
     else:
         profile, plan_source = PRESETS[body.tactic], "preset"
 
     result = evaluate(snap, body.team_id, placements, subs, profile, body.tactic)
-    pundit = pundit_take(snap, result, plan)
+    pundit = pundit_take(snap, result, plan, use_ai=use_ai)
 
     actual = snap["actual"]
     return SimulationResponse(

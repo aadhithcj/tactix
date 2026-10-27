@@ -113,6 +113,7 @@ def create_moment(competition_id: int, season_id: int, match_id: int, minute: in
         venue=match["stadium"],
         # Five substitutions became the norm in 2020; three before.
         subs_allowed=5 if played.year >= 2020 else 3,
+        featured=False,
     )
     try:
         ingest_match([spec])
